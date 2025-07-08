@@ -1,6 +1,7 @@
 import type { ZudokuConfig } from "zudoku";
 
 const config: ZudokuConfig = {
+  basePath: "/modular-flutter",
   site: {
     title: "Modular Flutter",
     showPoweredBy: false,
