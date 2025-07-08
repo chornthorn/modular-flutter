@@ -1,0 +1,734 @@
+---
+title: Routing
+description: Comprehensive guide to routing in Modular Flutter applications
+---
+
+Routing is a fundamental part of navigation in Modular Flutter applications. This guide covers the routing patterns using GoRouter and how modules manage their own routes.
+
+## Architecture Overview
+
+```
+┌─────────────────┐
+│  Global Router  │ ← Aggregates all module routes
+├─────────────────┤
+│ Module Routers  │ ← Each module defines its routes
+├─────────────────┤
+│    Screens      │ ← Route destinations
+└─────────────────┘
+```
+
+## Core Concepts
+
+### Module Router
+
+Each module defines its own router extending `ModuleRouter`:
+
+```dart
+abstract class ModuleRouter {
+  String get basePath;
+  List<RouteBase> get routes;
+}
+```
+
+### Route Registration
+
+Routes are automatically collected from all modules:
+
+```dart
+class AppRouter {
+  static GoRouter createRouter() {
+    return GoRouter(
+      routes: [
+        // Collect routes from all modules
+        ...ModuleRegistry.getAllRoutes(),
+      ],
+    );
+  }
+}
+```
+
+## Basic Routing
+
+### Simple Route Definition
+
+```dart
+class UserRouter extends ModuleRouter {
+  @override
+  String get basePath => '/users';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'user-list',
+      builder: (context, state) => const UserListScreen(),
+    ),
+  ];
+}
+```
+
+### Nested Routes
+
+```dart
+class PostRouter extends ModuleRouter {
+  @override
+  String get basePath => '/posts';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'post-list',
+      builder: (context, state) => const PostListScreen(),
+      routes: [
+        GoRoute(
+          path: '/:postId',
+          name: 'post-details',
+          builder: (context, state) {
+            final postId = state.pathParameters['postId']!;
+            return PostDetailsScreen(postId: postId);
+          },
+          routes: [
+            GoRoute(
+              path: '/edit',
+              name: 'post-edit',
+              builder: (context, state) {
+                final postId = state.pathParameters['postId']!;
+                return PostEditScreen(postId: postId);
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  ];
+}
+```
+
+### Route Parameters
+
+```dart
+class ProductRouter extends ModuleRouter {
+  @override
+  String get basePath => '/products';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: '$basePath/:categoryId',
+      name: 'product-category',
+      builder: (context, state) {
+        final categoryId = state.pathParameters['categoryId']!;
+        final sortBy = state.uri.queryParameters['sortBy'] ?? 'name';
+        final page = int.tryParse(state.uri.queryParameters['page'] ?? '1') ?? 1;
+
+        return ProductCategoryScreen(
+          categoryId: categoryId,
+          sortBy: sortBy,
+          page: page,
+        );
+      },
+    ),
+  ];
+}
+```
+
+## Advanced Routing Patterns
+
+### Route Guards
+
+```dart
+class AuthGuardedRouter extends ModuleRouter {
+  @override
+  String get basePath => '/admin';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'admin-dashboard',
+      builder: (context, state) => const AdminDashboard(),
+      redirect: (context, state) {
+        final authService = GetIt.instance<AuthService>();
+        if (!authService.isAuthenticated) {
+          return '/login?redirect=${state.uri.toString()}';
+        }
+        if (!authService.hasRole('admin')) {
+          return '/unauthorized';
+        }
+        return null; // Allow access
+      },
+    ),
+  ];
+}
+```
+
+### Dynamic Routes
+
+```dart
+class DynamicRouter extends ModuleRouter {
+  @override
+  String get basePath => '/dynamic';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: '$basePath/:moduleId/:action',
+      name: 'dynamic-route',
+      builder: (context, state) {
+        final moduleId = state.pathParameters['moduleId']!;
+        final action = state.pathParameters['action']!;
+
+        // Load module dynamically
+        final module = ModuleRegistry.getModule(moduleId);
+        if (module == null) {
+          return NotFoundScreen();
+        }
+
+        return DynamicScreen(
+          module: module,
+          action: action,
+          parameters: state.uri.queryParameters,
+        );
+      },
+    ),
+  ];
+}
+```
+
+### Shell Routes
+
+```dart
+class ShellRouter extends ModuleRouter {
+  @override
+  String get basePath => '/app';
+
+  @override
+  List<RouteBase> get routes => [
+    ShellRoute(
+      builder: (context, state, child) {
+        return AppShell(child: child);
+      },
+      routes: [
+        GoRoute(
+          path: '$basePath/dashboard',
+          name: 'dashboard',
+          builder: (context, state) => const DashboardScreen(),
+        ),
+        GoRoute(
+          path: '$basePath/settings',
+          name: 'settings',
+          builder: (context, state) => const SettingsScreen(),
+        ),
+      ],
+    ),
+  ];
+}
+```
+
+## Navigation Patterns
+
+### Programmatic Navigation
+
+```dart
+class NavigationService {
+  static void goToUserDetails(String userId) {
+    context.go('/users/$userId');
+  }
+
+  static void pushUserEdit(String userId) {
+    context.push('/users/$userId/edit');
+  }
+
+  static void popToRoot() {
+    while (context.canPop()) {
+      context.pop();
+    }
+  }
+}
+```
+
+### Navigation with Parameters
+
+```dart
+class SearchScreen extends StatelessWidget {
+  void _performSearch(String query) {
+    context.go('/search?q=${Uri.encodeComponent(query)}&category=all');
+  }
+
+  void _navigateToProduct(String productId) {
+    context.push('/products/$productId');
+  }
+}
+```
+
+### Navigation from ViewModels
+
+```dart
+class PostListViewModel extends ViewModel<PostListState> {
+  final NavigationService _navigationService;
+
+  PostListViewModel(this._navigationService, /* other dependencies */)
+      : super(const PostListState());
+
+  void navigateToPost(String postId) {
+    _navigationService.navigateToPost(postId);
+  }
+
+  void navigateToCreatePost() {
+    _navigationService.navigateToCreatePost();
+  }
+}
+
+// Navigation service
+class NavigationService {
+  final GoRouter _router;
+
+  NavigationService(this._router);
+
+  void navigateToPost(String postId) {
+    _router.go('/posts/$postId');
+  }
+
+  void navigateToCreatePost() {
+    _router.push('/posts/create');
+  }
+}
+```
+
+## Route Configuration
+
+### App-Level Router Setup
+
+```dart
+class AppRouter {
+  static GoRouter createRouter() {
+    return GoRouter(
+      initialLocation: '/dashboard',
+      debugLogDiagnostics: kDebugMode,
+      routes: [
+        // Root redirect
+        GoRoute(
+          path: '/',
+          name: 'root',
+          redirect: (context, state) => '/dashboard',
+        ),
+
+        // Module routes
+        ...ModuleRegistry.getAllRoutes(),
+
+        // Error routes
+        GoRoute(
+          path: '/error',
+          name: 'error',
+          builder: (context, state) => ErrorScreen(
+            error: state.extra as String?,
+          ),
+        ),
+      ],
+
+      // Global error handler
+      errorBuilder: (context, state) => ErrorScreen(
+        error: state.error?.toString(),
+      ),
+
+      // Global redirect logic
+      redirect: (context, state) {
+        final authService = GetIt.instance<AuthService>();
+        final isAuthenticated = authService.isAuthenticated;
+
+        final authRoutes = ['/login', '/register', '/forgot-password'];
+        final isAuthRoute = authRoutes.contains(state.uri.path);
+
+        if (!isAuthenticated && !isAuthRoute) {
+          return '/login?redirect=${state.uri.toString()}';
+        }
+
+        if (isAuthenticated && isAuthRoute) {
+          return '/dashboard';
+        }
+
+        return null;
+      },
+    );
+  }
+}
+```
+
+### Module Router Implementation
+
+```dart
+class CompleteModuleRouter extends ModuleRouter {
+  @override
+  String get basePath => '/complete';
+
+  @override
+  List<RouteBase> get routes => [
+    // Main routes
+    GoRoute(
+      path: basePath,
+      name: 'complete-home',
+      builder: (context, state) => const CompleteHomeScreen(),
+    ),
+
+    // Parameterized routes
+    GoRoute(
+      path: '$basePath/items/:itemId',
+      name: 'complete-item',
+      builder: (context, state) {
+        final itemId = state.pathParameters['itemId']!;
+        return CompleteItemScreen(itemId: itemId);
+      },
+    ),
+
+    // Query parameter routes
+    GoRoute(
+      path: '$basePath/search',
+      name: 'complete-search',
+      builder: (context, state) {
+        final query = state.uri.queryParameters['q'] ?? '';
+        final category = state.uri.queryParameters['category'];
+        final page = int.tryParse(state.uri.queryParameters['page'] ?? '1') ?? 1;
+
+        return CompleteSearchScreen(
+          query: query,
+          category: category,
+          page: page,
+        );
+      },
+    ),
+
+    // Modal routes
+    GoRoute(
+      path: '$basePath/modal/:modalType',
+      name: 'complete-modal',
+      pageBuilder: (context, state) {
+        final modalType = state.pathParameters['modalType']!;
+        return MaterialPage(
+          fullscreenDialog: true,
+          child: CompleteModalScreen(modalType: modalType),
+        );
+      },
+    ),
+  ];
+}
+```
+
+## Route Transitions
+
+### Custom Page Transitions
+
+```dart
+class AnimatedRouter extends ModuleRouter {
+  @override
+  String get basePath => '/animated';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'animated-home',
+      pageBuilder: (context, state) {
+        return CustomTransitionPage(
+          child: const AnimatedHomeScreen(),
+          transitionDuration: const Duration(milliseconds: 300),
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(1.0, 0.0),
+                end: Offset.zero,
+              ).animate(animation),
+              child: child,
+            );
+          },
+        );
+      },
+    ),
+  ];
+}
+```
+
+### Platform-Specific Transitions
+
+```dart
+class PlatformRouter extends ModuleRouter {
+  @override
+  String get basePath => '/platform';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'platform-home',
+      pageBuilder: (context, state) {
+        if (Platform.isIOS) {
+          return CupertinoPage(
+            child: const PlatformHomeScreen(),
+          );
+        } else {
+          return MaterialPage(
+            child: const PlatformHomeScreen(),
+          );
+        }
+      },
+    ),
+  ];
+}
+```
+
+## Testing Routes
+
+### Route Testing
+
+```dart
+void main() {
+  group('PostRouter', () {
+    late GoRouter router;
+
+    setUp(() {
+      router = GoRouter(
+        routes: PostRouter().routes,
+        initialLocation: '/posts',
+      );
+    });
+
+    testWidgets('should navigate to post details', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp.router(
+          routerConfig: router,
+        ),
+      );
+
+      // Navigate to post details
+      router.go('/posts/123');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(PostDetailsScreen), findsOneWidget);
+    });
+
+    testWidgets('should handle invalid post ID', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp.router(
+          routerConfig: router,
+        ),
+      );
+
+      // Navigate to invalid post
+      router.go('/posts/invalid');
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ErrorScreen), findsOneWidget);
+    });
+  });
+}
+```
+
+### Navigation Testing
+
+```dart
+void main() {
+  group('Navigation', () {
+    testWidgets('should navigate between screens', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp.router(
+          routerConfig: AppRouter.createRouter(),
+        ),
+      );
+
+      // Start at home
+      expect(find.byType(HomeScreen), findsOneWidget);
+
+      // Navigate to users
+      await tester.tap(find.text('Users'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UserListScreen), findsOneWidget);
+
+      // Navigate to user details
+      await tester.tap(find.text('John Doe'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UserDetailsScreen), findsOneWidget);
+    });
+  });
+}
+```
+
+## Best Practices
+
+### 1. Route Organization
+
+```dart
+// Good: Hierarchical route structure
+class WellOrganizedRouter extends ModuleRouter {
+  @override
+  String get basePath => '/users';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'user-list',
+      builder: (context, state) => const UserListScreen(),
+      routes: [
+        GoRoute(
+          path: '/:userId',
+          name: 'user-details',
+          builder: (context, state) {
+            final userId = state.pathParameters['userId']!;
+            return UserDetailsScreen(userId: userId);
+          },
+          routes: [
+            GoRoute(
+              path: '/edit',
+              name: 'user-edit',
+              builder: (context, state) {
+                final userId = state.pathParameters['userId']!;
+                return UserEditScreen(userId: userId);
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  ];
+}
+```
+
+### 2. Error Handling
+
+```dart
+class SafeRouter extends ModuleRouter {
+  @override
+  String get basePath => '/safe';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: '$basePath/:id',
+      name: 'safe-details',
+      builder: (context, state) {
+        final id = state.pathParameters['id']!;
+
+        // Validate ID format
+        if (!RegExp(r'^\d+$').hasMatch(id)) {
+          return const ErrorScreen(
+            error: 'Invalid ID format',
+          );
+        }
+
+        return SafeDetailsScreen(id: id);
+      },
+    ),
+  ];
+}
+```
+
+### 3. Type Safety
+
+```dart
+// Route definitions with type safety
+class TypeSafeRouter extends ModuleRouter {
+  @override
+  String get basePath => '/typesafe';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: '$basePath/product/:productId',
+      name: RouteNames.productDetails,
+      builder: (context, state) {
+        final productId = state.pathParameters['productId']!;
+        return ProductDetailsScreen(productId: productId);
+      },
+    ),
+  ];
+}
+
+// Route names as constants
+class RouteNames {
+  static const productDetails = 'product-details';
+  static const userProfile = 'user-profile';
+  static const settings = 'settings';
+}
+
+// Type-safe navigation
+extension TypeSafeNavigation on BuildContext {
+  void goToProduct(String productId) {
+    go('/typesafe/product/$productId');
+  }
+
+  void goToUserProfile(String userId) {
+    go('/users/$userId');
+  }
+}
+```
+
+## Common Patterns
+
+### Deep Linking
+
+```dart
+class DeepLinkRouter extends ModuleRouter {
+  @override
+  String get basePath => '/share';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: '$basePath/post/:postId',
+      name: 'shared-post',
+      builder: (context, state) {
+        final postId = state.pathParameters['postId']!;
+        final source = state.uri.queryParameters['source'] ?? 'direct';
+
+        return SharedPostScreen(
+          postId: postId,
+          source: source,
+        );
+      },
+    ),
+  ];
+}
+```
+
+### Authentication Flow
+
+```dart
+class AuthRouter extends ModuleRouter {
+  @override
+  String get basePath => '/auth';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: '$basePath/login',
+      name: 'login',
+      builder: (context, state) {
+        final redirectPath = state.uri.queryParameters['redirect'];
+        return LoginScreen(redirectPath: redirectPath);
+      },
+    ),
+    GoRoute(
+      path: '$basePath/register',
+      name: 'register',
+      builder: (context, state) => const RegisterScreen(),
+    ),
+    GoRoute(
+      path: '$basePath/forgot-password',
+      name: 'forgot-password',
+      builder: (context, state) => const ForgotPasswordScreen(),
+    ),
+  ];
+}
+```
+
+## Next Steps
+
+- [Learn about Testing](/guides/testing)
+- [See Complete Examples](/examples/post-module)
+- [Explore API Reference](/api/modular-flutter)
+
+---
+
+Effective routing is essential for creating intuitive navigation in Flutter applications. The modular approach allows each feature to manage its own routes while maintaining a cohesive navigation experience.

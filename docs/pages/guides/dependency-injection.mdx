@@ -1,0 +1,649 @@
+---
+title: Dependency Injection
+description: Guide to dependency injection patterns in Modular Flutter
+---
+
+Dependency injection is a core principle in Modular Flutter, enabling loose coupling, testability, and maintainability. This guide covers the dependency injection patterns using GetIt and how they integrate with the modular architecture.
+
+## Overview
+
+Modular Flutter uses a service locator pattern with GetIt combined with Riverpod providers for dependency injection:
+
+- **GetIt**: Global service locator for cross-cutting concerns
+- **Riverpod**: Provider-based DI for UI-specific dependencies
+- **Module Registration**: Automatic dependency setup per module
+
+## Core Concepts
+
+### Service Locator Pattern
+
+```dart
+// Global service locator
+final serviceLocator = GetIt.instance;
+
+// Register dependencies
+serviceLocator.registerSingleton<ApiClient>(ApiClient());
+serviceLocator.registerLazySingleton<DatabaseService>(() => DatabaseService());
+
+// Retrieve dependencies
+final apiClient = serviceLocator<ApiClient>();
+final database = serviceLocator.get<DatabaseService>();
+```
+
+### Module-Based Registration
+
+```dart
+class UserModule extends Module<UserRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register in dependency order
+    _registerServices(locator, appConfig);
+    _registerRepositories(locator);
+    _registerViewModels(locator);
+  }
+
+  void _registerServices(GetIt locator, AppConfig appConfig) {
+    locator.registerLazySingleton<UserService>(
+      () => UserService(
+        apiClient: locator.get<ApiClient>(),
+        baseUrl: appConfig.apiBaseUrl,
+      ),
+    );
+  }
+
+  void _registerRepositories(GetIt locator) {
+    locator.registerLazySingleton<UserRepository>(
+      () => UserRepositoryImpl(locator.get<UserService>()),
+    );
+  }
+
+  void _registerViewModels(GetIt locator) {
+    // ViewModels are typically registered as factories
+    locator.registerFactory<UserListViewModel>(
+      () => UserListViewModel(locator.get<UserRepository>()),
+    );
+  }
+}
+```
+
+## Registration Types
+
+### Singleton Registration
+
+```dart
+// Eager singleton - created immediately
+locator.registerSingleton<DatabaseService>(DatabaseService());
+
+// Lazy singleton - created on first access
+locator.registerLazySingleton<ApiClient>(() => ApiClient());
+
+// Singleton with dependencies
+locator.registerLazySingleton<UserService>(
+  () => UserService(
+    apiClient: locator.get<ApiClient>(),
+    database: locator.get<DatabaseService>(),
+  ),
+);
+```
+
+### Factory Registration
+
+```dart
+// Factory - new instance each time
+locator.registerFactory<UserViewModel>(
+  () => UserViewModel(locator.get<UserRepository>()),
+);
+
+// Factory with parameters
+locator.registerFactoryParam<UserDetailsViewModel, String, void>(
+  (userId, _) => UserDetailsViewModel(
+    locator.get<UserRepository>(),
+    userId,
+  ),
+);
+```
+
+### Conditional Registration
+
+```dart
+// Register based on environment
+if (appConfig.isDebugMode) {
+  locator.registerLazySingleton<LoggingService>(
+    () => VerboseLoggingService(),
+  );
+} else {
+  locator.registerLazySingleton<LoggingService>(
+    () => ProductionLoggingService(),
+  );
+}
+
+// Register based on feature flags
+if (appConfig.isFeatureEnabled('analytics')) {
+  locator.registerLazySingleton<AnalyticsService>(
+    () => FirebaseAnalyticsService(),
+  );
+} else {
+  locator.registerLazySingleton<AnalyticsService>(
+    () => NoOpAnalyticsService(),
+  );
+}
+```
+
+## Integration with Riverpod
+
+### Provider Bridge
+
+```dart
+// Bridge GetIt to Riverpod
+final userRepositoryProvider = Provider<UserRepository>((ref) {
+  return GetIt.instance<UserRepository>();
+});
+
+// Use in ViewModels
+final userViewModelProvider =
+    StateNotifierProvider<UserViewModel, UserState>((ref) {
+  final repository = ref.read(userRepositoryProvider);
+  return UserViewModel(repository);
+});
+```
+
+### Overriding for Testing
+
+```dart
+// In tests, override providers
+testWidgets('should display user list', (tester) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        userRepositoryProvider.overrideWithValue(mockUserRepository),
+      ],
+      child: MyApp(),
+    ),
+  );
+
+  // Test implementation
+});
+```
+
+## Common Patterns
+
+### Repository Pattern
+
+```dart
+class DataModule extends Module<DataRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register data sources
+    locator.registerLazySingleton<RemoteDataSource>(
+      () => RemoteDataSourceImpl(locator.get<ApiClient>()),
+    );
+
+    locator.registerLazySingleton<LocalDataSource>(
+      () => LocalDataSourceImpl(locator.get<DatabaseService>()),
+    );
+
+    // Register repositories
+    locator.registerLazySingleton<UserRepository>(
+      () => UserRepositoryImpl(
+        remoteDataSource: locator.get<RemoteDataSource>(),
+        localDataSource: locator.get<LocalDataSource>(),
+      ),
+    );
+  }
+}
+```
+
+### Service Layer
+
+```dart
+class NetworkModule extends Module<NetworkRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register HTTP client
+    locator.registerLazySingleton<Dio>(() {
+      final dio = Dio();
+      dio.options.baseUrl = appConfig.apiBaseUrl;
+      dio.options.connectTimeout = const Duration(seconds: 30);
+      dio.options.receiveTimeout = const Duration(seconds: 30);
+
+      // Add interceptors
+      dio.interceptors.add(AuthInterceptor(locator.get<AuthService>()));
+      dio.interceptors.add(LoggingInterceptor());
+
+      return dio;
+    });
+
+    // Register API client
+    locator.registerLazySingleton<ApiClient>(
+      () => ApiClient(locator.get<Dio>()),
+    );
+  }
+}
+```
+
+### Use Case Pattern
+
+```dart
+class DomainModule extends Module<DomainRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register use cases
+    locator.registerFactory<LoginUseCase>(
+      () => LoginUseCase(locator.get<AuthRepository>()),
+    );
+
+    locator.registerFactory<GetUserProfileUseCase>(
+      () => GetUserProfileUseCase(locator.get<UserRepository>()),
+    );
+
+    locator.registerFactory<UpdateUserProfileUseCase>(
+      () => UpdateUserProfileUseCase(locator.get<UserRepository>()),
+    );
+  }
+}
+```
+
+## Advanced Patterns
+
+### Scoped Dependencies
+
+```dart
+// Scoped to user session
+class SessionScopeModule extends Module<SessionRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register session-scoped services
+    locator.registerLazySingleton<SessionManager>(
+      () => SessionManager(),
+      instanceName: 'session',
+    );
+
+    locator.registerLazySingleton<UserPreferencesService>(
+      () => UserPreferencesService(
+        locator.get<SessionManager>(instanceName: 'session'),
+      ),
+    );
+  }
+}
+```
+
+### Dynamic Dependencies
+
+```dart
+// Dynamic registration based on configuration
+class DynamicModule extends Module<DynamicRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register payment service based on config
+    final paymentProvider = appConfig.getConfigValue('PAYMENT_PROVIDER');
+
+    switch (paymentProvider) {
+      case 'stripe':
+        locator.registerLazySingleton<PaymentService>(
+          () => StripePaymentService(
+            apiKey: appConfig.getRequiredValue('STRIPE_API_KEY'),
+          ),
+        );
+        break;
+      case 'paypal':
+        locator.registerLazySingleton<PaymentService>(
+          () => PayPalPaymentService(
+            clientId: appConfig.getRequiredValue('PAYPAL_CLIENT_ID'),
+          ),
+        );
+        break;
+      default:
+        throw Exception('Unknown payment provider: $paymentProvider');
+    }
+  }
+}
+```
+
+### Decorator Pattern
+
+```dart
+class LoggingModule extends Module<LoggingRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register base repository
+    locator.registerLazySingleton<UserRepository>(
+      () => UserRepositoryImpl(locator.get<UserService>()),
+      instanceName: 'base',
+    );
+
+    // Register decorated repository
+    locator.registerLazySingleton<UserRepository>(
+      () => LoggingUserRepository(
+        locator.get<UserRepository>(instanceName: 'base'),
+        locator.get<LoggingService>(),
+      ),
+    );
+  }
+}
+
+class LoggingUserRepository implements UserRepository {
+  final UserRepository _repository;
+  final LoggingService _logger;
+
+  LoggingUserRepository(this._repository, this._logger);
+
+  @override
+  Future<List<User>> getUsers() async {
+    _logger.log('Getting users');
+    try {
+      final users = await _repository.getUsers();
+      _logger.log('Retrieved ${users.length} users');
+      return users;
+    } catch (e) {
+      _logger.error('Failed to get users', e);
+      rethrow;
+    }
+  }
+}
+```
+
+## Module Dependencies
+
+### Inter-Module Dependencies
+
+```dart
+// Core module with shared dependencies
+class CoreModule extends Module<CoreRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register core services
+    locator.registerLazySingleton<Logger>(() => Logger());
+    locator.registerLazySingleton<EventBus>(() => EventBus());
+  }
+}
+
+// Feature module depending on core
+class FeatureModule extends Module<FeatureRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Depends on core services
+    locator.registerLazySingleton<FeatureService>(
+      () => FeatureService(
+        logger: locator.get<Logger>(),
+        eventBus: locator.get<EventBus>(),
+      ),
+    );
+  }
+}
+```
+
+### Module Initialization Order
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Register global dependencies first
+  await Modular.register((locator) async {
+    // Core dependencies
+    locator.registerLazySingleton<AppConfig>(() => AppConfigImpl());
+    locator.registerLazySingleton<Logger>(() => Logger());
+  });
+
+  // Register modules in dependency order
+  runApp(ModularApp(
+    modules: [
+      CoreModule(),      // No dependencies
+      NetworkModule(),   // Depends on core
+      AuthModule(),      // Depends on network
+      UserModule(),      // Depends on auth
+      FeatureModule(),   // Depends on user
+    ],
+    child: MyApp(),
+  ));
+}
+```
+
+## Testing with DI
+
+### Mock Registration
+
+```dart
+void main() {
+  group('UserViewModel Tests', () {
+    late MockUserRepository mockRepository;
+    late UserViewModel viewModel;
+
+    setUp(() {
+      // Reset service locator
+      GetIt.instance.reset();
+
+      // Register mocks
+      mockRepository = MockUserRepository();
+      GetIt.instance.registerSingleton<UserRepository>(mockRepository);
+
+      // Create ViewModel
+      viewModel = UserViewModel(GetIt.instance<UserRepository>());
+    });
+
+    test('should load users successfully', () async {
+      // Arrange
+      when(mockRepository.getUsers())
+          .thenAnswer((_) async => [User(id: '1', name: 'John')]);
+
+      // Act
+      await viewModel.loadUsers();
+
+      // Assert
+      expect(viewModel.state.users, isNotEmpty);
+      verify(mockRepository.getUsers()).called(1);
+    });
+  });
+}
+```
+
+### Provider Overrides
+
+```dart
+void main() {
+  group('Widget Tests', () {
+    testWidgets('should display user list', (tester) async {
+      // Arrange
+      final mockRepository = MockUserRepository();
+      when(mockRepository.getUsers())
+          .thenAnswer((_) async => [User(id: '1', name: 'John')]);
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userRepositoryProvider.overrideWithValue(mockRepository),
+          ],
+          child: MaterialApp(home: UserListScreen()),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Assert
+      expect(find.text('John'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Best Practices
+
+### 1. Dependency Ordering
+
+```dart
+class WellOrderedModule extends Module<WellOrderedRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // 1. External dependencies (APIs, databases)
+    _registerExternalServices(locator, appConfig);
+
+    // 2. Core services
+    _registerCoreServices(locator);
+
+    // 3. Repositories
+    _registerRepositories(locator);
+
+    // 4. Use cases
+    _registerUseCases(locator);
+
+    // 5. ViewModels
+    _registerViewModels(locator);
+  }
+}
+```
+
+### 2. Interface Segregation
+
+```dart
+// Good: Small, focused interfaces
+abstract class UserReader {
+  Future<User> getUser(String id);
+  Future<List<User>> getUsers();
+}
+
+abstract class UserWriter {
+  Future<User> createUser(User user);
+  Future<User> updateUser(User user);
+  Future<void> deleteUser(String id);
+}
+
+// Register implementations
+locator.registerLazySingleton<UserReader>(
+  () => UserRepositoryImpl(locator.get<UserService>()),
+);
+
+locator.registerLazySingleton<UserWriter>(
+  () => UserRepositoryImpl(locator.get<UserService>()),
+);
+```
+
+### 3. Lifecycle Management
+
+```dart
+class ManagedModule extends Module<ManagedRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register with disposal
+    locator.registerLazySingleton<DatabaseService>(
+      () => DatabaseService(),
+      dispose: (service) => service.close(),
+    );
+
+    // Register with custom factory
+    locator.registerFactoryParam<FileUploadService, String, void>(
+      (uploadPath, _) => FileUploadService(uploadPath),
+      dispose: (service) => service.cleanup(),
+    );
+  }
+}
+```
+
+### 4. Error Handling
+
+```dart
+class SafeModule extends Module<SafeRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    try {
+      // Register dependencies with error handling
+      locator.registerLazySingleton<DatabaseService>(() {
+        try {
+          return DatabaseService(appConfig.databaseUrl);
+        } catch (e) {
+          // Fallback to in-memory database
+          return InMemoryDatabaseService();
+        }
+      });
+    } catch (e) {
+      // Log registration errors
+      print('Failed to register dependencies: $e');
+      rethrow;
+    }
+  }
+}
+```
+
+## Common Pitfalls
+
+### 1. Circular Dependencies
+
+```dart
+// Bad: Circular dependency
+class ServiceA {
+  final ServiceB serviceB;
+  ServiceA(this.serviceB);
+}
+
+class ServiceB {
+  final ServiceA serviceA;
+  ServiceB(this.serviceA);
+}
+
+// Good: Break the cycle with interfaces
+abstract class ServiceAInterface {
+  void doSomething();
+}
+
+class ServiceA implements ServiceAInterface {
+  @override
+  void doSomething() {}
+}
+
+class ServiceB {
+  final ServiceAInterface serviceA;
+  ServiceB(this.serviceA);
+}
+```
+
+### 2. Over-injection
+
+```dart
+// Bad: Too many dependencies
+class OverInjectedService {
+  final ServiceA serviceA;
+  final ServiceB serviceB;
+  final ServiceC serviceC;
+  final ServiceD serviceD;
+  final ServiceE serviceE;
+  final ServiceF serviceF;
+  // ... too many dependencies
+}
+
+// Good: Aggregate related services
+class ServiceManager {
+  final ServiceA serviceA;
+  final ServiceB serviceB;
+  ServiceManager(this.serviceA, this.serviceB);
+}
+
+class CleanService {
+  final ServiceManager serviceManager;
+  CleanService(this.serviceManager);
+}
+```
+
+### 3. Leaky Abstractions
+
+```dart
+// Bad: Leaky abstraction
+abstract class BadRepository {
+  Future<HttpResponse> getRawData(); // Exposes HTTP details
+}
+
+// Good: Clean abstraction
+abstract class GoodRepository {
+  Future<List<User>> getUsers();
+  Future<User> getUser(String id);
+}
+```
+
+## Next Steps
+
+- [Learn about Routing](/guides/routing)
+- [Explore Testing Strategies](/guides/testing)
+- [See Examples](/examples/post-module)
+
+---
+
+Proper dependency injection is essential for building maintainable, testable, and scalable applications. The patterns shown here provide a solid foundation for managing dependencies in modular Flutter applications.

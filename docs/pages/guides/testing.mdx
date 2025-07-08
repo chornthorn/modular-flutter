@@ -1,0 +1,805 @@
+---
+title: Testing
+description: Comprehensive testing strategies for Modular Flutter applications
+---
+
+Testing is crucial for maintaining the quality and reliability of modular Flutter applications. This guide covers testing strategies for different layers of the architecture.
+
+## Testing Pyramid
+
+```
+┌─────────────────────┐
+│   Integration       │ ← End-to-end tests
+│     Tests           │
+├─────────────────────┤
+│   Widget Tests      │ ← UI component tests
+├─────────────────────┤
+│   Unit Tests        │ ← Business logic tests
+└─────────────────────┘
+```
+
+## Unit Testing
+
+### Testing ViewModels
+
+```dart
+void main() {
+  group('UserProfileViewModel', () {
+    late MockUserRepository mockRepository;
+    late UserProfileViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockUserRepository();
+      viewModel = UserProfileViewModel(mockRepository);
+    });
+
+    test('should start with initial state', () {
+      expect(viewModel.state.status, UiStatus.initial);
+      expect(viewModel.state.user, isNull);
+      expect(viewModel.state.errorMessage, isNull);
+    });
+
+    test('should load user profile successfully', () async {
+      // Arrange
+      final user = User(id: '1', name: 'John Doe', email: 'john@example.com');
+      when(mockRepository.getCurrentUser()).thenAnswer((_) async => user);
+
+      // Act
+      await viewModel.loadUserProfile();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.user, user);
+      expect(viewModel.state.errorMessage, isNull);
+      verify(mockRepository.getCurrentUser()).called(1);
+    });
+
+    test('should handle errors gracefully', () async {
+      // Arrange
+      when(mockRepository.getCurrentUser())
+          .thenThrow(Exception('Network error'));
+
+      // Act
+      await viewModel.loadUserProfile();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.error);
+      expect(viewModel.state.errorMessage, contains('Network error'));
+      expect(viewModel.state.user, isNull);
+    });
+
+    test('should update profile successfully', () async {
+      // Arrange
+      final request = UserUpdateRequest(name: 'Jane Doe');
+      final updatedUser = User(id: '1', name: 'Jane Doe', email: 'jane@example.com');
+      when(mockRepository.updateUser(request))
+          .thenAnswer((_) async => updatedUser);
+
+      // Act
+      await viewModel.updateProfile(request);
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.user, updatedUser);
+      verify(mockRepository.updateUser(request)).called(1);
+    });
+  });
+}
+```
+
+### Testing Repositories
+
+```dart
+void main() {
+  group('UserRepositoryImpl', () {
+    late MockUserService mockService;
+    late UserRepositoryImpl repository;
+
+    setUp(() {
+      mockService = MockUserService();
+      repository = UserRepositoryImpl(mockService);
+    });
+
+    test('should return users from service', () async {
+      // Arrange
+      final users = [
+        User(id: '1', name: 'John'),
+        User(id: '2', name: 'Jane'),
+      ];
+      when(mockService.getUsers()).thenAnswer((_) async => users);
+
+      // Act
+      final result = await repository.getUsers();
+
+      // Assert
+      expect(result, equals(users));
+      verify(mockService.getUsers()).called(1);
+    });
+
+    test('should propagate service errors', () async {
+      // Arrange
+      when(mockService.getUsers()).thenThrow(Exception('Service error'));
+
+      // Act & Assert
+      expect(
+        () => repository.getUsers(),
+        throwsException,
+      );
+    });
+  });
+}
+```
+
+### Testing Services
+
+```dart
+void main() {
+  group('UserService', () {
+    late MockDio mockDio;
+    late UserService service;
+
+    setUp(() {
+      mockDio = MockDio();
+      service = UserService(dio: mockDio, baseUrl: 'https://api.example.com');
+    });
+
+    test('should fetch users successfully', () async {
+      // Arrange
+      final responseData = {
+        'data': [
+          {'id': '1', 'name': 'John', 'email': 'john@example.com'},
+          {'id': '2', 'name': 'Jane', 'email': 'jane@example.com'},
+        ]
+      };
+      when(mockDio.get('https://api.example.com/users'))
+          .thenAnswer((_) async => Response(
+                data: responseData,
+                statusCode: 200,
+                requestOptions: RequestOptions(path: '/users'),
+              ));
+
+      // Act
+      final users = await service.getUsers();
+
+      // Assert
+      expect(users.length, 2);
+      expect(users[0].name, 'John');
+      expect(users[1].name, 'Jane');
+    });
+
+    test('should handle network errors', () async {
+      // Arrange
+      when(mockDio.get('https://api.example.com/users'))
+          .thenThrow(DioException(
+            requestOptions: RequestOptions(path: '/users'),
+            message: 'Network error',
+          ));
+
+      // Act & Assert
+      expect(
+        () => service.getUsers(),
+        throwsA(isA<Exception>()),
+      );
+    });
+  });
+}
+```
+
+## Widget Testing
+
+### Testing Screens
+
+```dart
+void main() {
+  group('UserListScreen', () {
+    late MockUserRepository mockRepository;
+
+    setUp(() {
+      mockRepository = MockUserRepository();
+    });
+
+    testWidgets('should display loading indicator initially', (tester) async {
+      // Arrange
+      when(mockRepository.getUsers())
+          .thenAnswer((_) async => []);
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userRepositoryProvider.overrideWithValue(mockRepository),
+          ],
+          child: MaterialApp(
+            home: UserListScreen(),
+          ),
+        ),
+      );
+
+      // Assert
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+
+    testWidgets('should display user list when loaded', (tester) async {
+      // Arrange
+      final users = [
+        User(id: '1', name: 'John Doe', email: 'john@example.com'),
+        User(id: '2', name: 'Jane Smith', email: 'jane@example.com'),
+      ];
+      when(mockRepository.getUsers()).thenAnswer((_) async => users);
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userRepositoryProvider.overrideWithValue(mockRepository),
+          ],
+          child: MaterialApp(
+            home: UserListScreen(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Assert
+      expect(find.text('John Doe'), findsOneWidget);
+      expect(find.text('Jane Smith'), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+    });
+
+    testWidgets('should show error message on failure', (tester) async {
+      // Arrange
+      when(mockRepository.getUsers())
+          .thenThrow(Exception('Failed to load users'));
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userRepositoryProvider.overrideWithValue(mockRepository),
+          ],
+          child: MaterialApp(
+            home: UserListScreen(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      // Assert
+      expect(find.text('Failed to load users'), findsOneWidget);
+      expect(find.byType(ElevatedButton), findsOneWidget); // Retry button
+    });
+  });
+}
+```
+
+### Testing Widgets with State
+
+```dart
+void main() {
+  group('CounterWidget', () {
+    testWidgets('should display initial count', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: CounterWidget(),
+          ),
+        ),
+      );
+
+      expect(find.text('Count: 0'), findsOneWidget);
+    });
+
+    testWidgets('should increment count when button pressed', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: CounterWidget(),
+          ),
+        ),
+      );
+
+      // Tap increment button
+      await tester.tap(find.text('Increment'));
+      await tester.pump();
+
+      expect(find.text('Count: 1'), findsOneWidget);
+    });
+
+    testWidgets('should handle multiple increments', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: CounterWidget(),
+          ),
+        ),
+      );
+
+      // Tap multiple times
+      await tester.tap(find.text('Increment'));
+      await tester.tap(find.text('Increment'));
+      await tester.tap(find.text('Increment'));
+      await tester.pump();
+
+      expect(find.text('Count: 3'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Integration Testing
+
+### Module Integration Tests
+
+```dart
+void main() {
+  group('UserModule Integration', () {
+    setUp(() async {
+      // Reset dependency injection
+      GetIt.instance.reset();
+
+      // Register test dependencies
+      GetIt.instance.registerSingleton<AppConfig>(TestAppConfig());
+      GetIt.instance.registerSingleton<Dio>(MockDio());
+
+      // Register module
+      final userModule = UserModule();
+      userModule.registerDependencies(GetIt.instance, GetIt.instance<AppConfig>());
+    });
+
+    testWidgets('should complete user flow', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp.router(
+            routerConfig: GoRouter(routes: UserModule().routes),
+          ),
+        ),
+      );
+
+      // Should start at user list
+      expect(find.byType(UserListScreen), findsOneWidget);
+
+      // Tap on a user
+      await tester.tap(find.text('John Doe'));
+      await tester.pumpAndSettle();
+
+      // Should navigate to user details
+      expect(find.byType(UserDetailsScreen), findsOneWidget);
+
+      // Tap edit button
+      await tester.tap(find.byIcon(Icons.edit));
+      await tester.pumpAndSettle();
+
+      // Should navigate to edit screen
+      expect(find.byType(UserEditScreen), findsOneWidget);
+    });
+  });
+}
+```
+
+### End-to-End Testing
+
+```dart
+void main() {
+  group('App Flow Tests', () {
+    testWidgets('complete user journey', (tester) async {
+      await tester.pumpWidget(MyApp());
+      await tester.pumpAndSettle();
+
+      // Login flow
+      expect(find.byType(LoginScreen), findsOneWidget);
+
+      await tester.enterText(find.byKey(Key('email-field')), 'test@example.com');
+      await tester.enterText(find.byKey(Key('password-field')), 'password');
+      await tester.tap(find.text('Login'));
+      await tester.pumpAndSettle();
+
+      // Dashboard
+      expect(find.byType(DashboardScreen), findsOneWidget);
+
+      // Navigate to users
+      await tester.tap(find.text('Users'));
+      await tester.pumpAndSettle();
+
+      // User list
+      expect(find.byType(UserListScreen), findsOneWidget);
+
+      // Create new user
+      await tester.tap(find.byIcon(Icons.add));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(UserCreateScreen), findsOneWidget);
+
+      // Fill form and submit
+      await tester.enterText(find.byKey(Key('name-field')), 'New User');
+      await tester.enterText(find.byKey(Key('email-field')), 'new@example.com');
+      await tester.tap(find.text('Save'));
+      await tester.pumpAndSettle();
+
+      // Should return to list with new user
+      expect(find.byType(UserListScreen), findsOneWidget);
+      expect(find.text('New User'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Golden Tests
+
+### Widget Golden Tests
+
+```dart
+void main() {
+  group('Golden Tests', () {
+    testWidgets('UserCard golden test', (tester) async {
+      final user = User(
+        id: '1',
+        name: 'John Doe',
+        email: 'john@example.com',
+        avatarUrl: 'https://example.com/avatar.jpg',
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: UserCard(user: user),
+          ),
+        ),
+      );
+
+      await expectLater(
+        find.byType(UserCard),
+        matchesGoldenFile('user_card.png'),
+      );
+    });
+
+    testWidgets('UserListScreen golden test', (tester) async {
+      final mockRepository = MockUserRepository();
+      when(mockRepository.getUsers()).thenAnswer((_) async => [
+        User(id: '1', name: 'John Doe', email: 'john@example.com'),
+        User(id: '2', name: 'Jane Smith', email: 'jane@example.com'),
+      ]);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userRepositoryProvider.overrideWithValue(mockRepository),
+          ],
+          child: MaterialApp(
+            home: UserListScreen(),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      await expectLater(
+        find.byType(UserListScreen),
+        matchesGoldenFile('user_list_screen.png'),
+      );
+    });
+  });
+}
+```
+
+## Performance Testing
+
+### Performance Profiling
+
+```dart
+void main() {
+  group('Performance Tests', () {
+    testWidgets('should render large list efficiently', (tester) async {
+      // Generate large dataset
+      final users = List.generate(1000, (index) =>
+        User(id: '$index', name: 'User $index', email: 'user$index@example.com')
+      );
+
+      final mockRepository = MockUserRepository();
+      when(mockRepository.getUsers()).thenAnswer((_) async => users);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userRepositoryProvider.overrideWithValue(mockRepository),
+          ],
+          child: MaterialApp(
+            home: UserListScreen(),
+          ),
+        ),
+      );
+
+      // Measure rendering time
+      final stopwatch = Stopwatch()..start();
+      await tester.pumpAndSettle();
+      stopwatch.stop();
+
+      // Assert reasonable render time
+      expect(stopwatch.elapsedMilliseconds, lessThan(1000));
+    });
+
+    testWidgets('should handle rapid state changes', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: CounterWidget(),
+          ),
+        ),
+      );
+
+      // Rapidly increment counter
+      final stopwatch = Stopwatch()..start();
+      for (int i = 0; i < 100; i++) {
+        await tester.tap(find.text('Increment'));
+        await tester.pump();
+      }
+      stopwatch.stop();
+
+      expect(stopwatch.elapsedMilliseconds, lessThan(2000));
+      expect(find.text('Count: 100'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Test Utilities
+
+### Mock Factories
+
+```dart
+class MockFactory {
+  static MockUserRepository createMockUserRepository() {
+    final mock = MockUserRepository();
+    when(mock.getUsers()).thenAnswer((_) async => [
+      User(id: '1', name: 'John Doe', email: 'john@example.com'),
+      User(id: '2', name: 'Jane Smith', email: 'jane@example.com'),
+    ]);
+    return mock;
+  }
+
+  static MockUserService createMockUserService() {
+    final mock = MockUserService();
+    when(mock.getUsers()).thenAnswer((_) async => [
+      User(id: '1', name: 'John Doe', email: 'john@example.com'),
+    ]);
+    return mock;
+  }
+}
+```
+
+### Test Data Builders
+
+```dart
+class UserBuilder {
+  String _id = '1';
+  String _name = 'John Doe';
+  String _email = 'john@example.com';
+  String? _avatarUrl;
+
+  UserBuilder withId(String id) {
+    _id = id;
+    return this;
+  }
+
+  UserBuilder withName(String name) {
+    _name = name;
+    return this;
+  }
+
+  UserBuilder withEmail(String email) {
+    _email = email;
+    return this;
+  }
+
+  UserBuilder withAvatar(String avatarUrl) {
+    _avatarUrl = avatarUrl;
+    return this;
+  }
+
+  User build() {
+    return User(
+      id: _id,
+      name: _name,
+      email: _email,
+      avatarUrl: _avatarUrl,
+    );
+  }
+}
+
+// Usage
+final user = UserBuilder()
+    .withId('123')
+    .withName('Test User')
+    .withEmail('test@example.com')
+    .build();
+```
+
+### Test Helpers
+
+```dart
+class TestHelpers {
+  static Widget wrapWithProviders(
+    Widget child, {
+    List<Override>? overrides,
+  }) {
+    return ProviderScope(
+      overrides: overrides ?? [],
+      child: MaterialApp(
+        home: child,
+      ),
+    );
+  }
+
+  static Widget wrapWithRouter(
+    Widget child,
+    List<RouteBase> routes,
+  ) {
+    return MaterialApp.router(
+      routerConfig: GoRouter(
+        routes: routes,
+        initialLocation: '/',
+      ),
+    );
+  }
+
+  static Future<void> pumpAndSettleWithTimeout(
+    WidgetTester tester, {
+    Duration timeout = const Duration(seconds: 10),
+  }) async {
+    await tester.pumpAndSettle(const Duration(milliseconds: 100), timeout);
+  }
+}
+```
+
+## Test Configuration
+
+### Test Setup
+
+```dart
+// test/test_config.dart
+void configureTests() {
+  group('Setup', () {
+    setUpAll(() async {
+      // Global test setup
+      TestWidgetsFlutterBinding.ensureInitialized();
+
+      // Mock network calls
+      HttpOverrides.global = MockHttpOverrides();
+
+      // Initialize test database
+      await TestDatabase.initialize();
+    });
+
+    tearDownAll(() async {
+      // Global cleanup
+      await TestDatabase.cleanup();
+    });
+  });
+}
+
+// test/main_test.dart
+void main() {
+  configureTests();
+
+  // Import all test files
+  group('All Tests', () {
+    // Unit tests
+    group('Unit Tests', () {
+      // Import unit test files
+    });
+
+    // Widget tests
+    group('Widget Tests', () {
+      // Import widget test files
+    });
+
+    // Integration tests
+    group('Integration Tests', () {
+      // Import integration test files
+    });
+  });
+}
+```
+
+### Test Coverage
+
+```bash
+# Run tests with coverage
+flutter test --coverage
+
+# Generate coverage report
+genhtml coverage/lcov.info -o coverage/html
+
+# View coverage report
+open coverage/html/index.html
+```
+
+## Best Practices
+
+### 1. Test Organization
+
+```dart
+// Good: Well-organized test structure
+void main() {
+  group('UserViewModel', () {
+    late MockUserRepository mockRepository;
+    late UserViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockUserRepository();
+      viewModel = UserViewModel(mockRepository);
+    });
+
+    group('loadUsers', () {
+      test('should load users successfully', () async {
+        // Test implementation
+      });
+
+      test('should handle network errors', () async {
+        // Test implementation
+      });
+    });
+
+    group('createUser', () {
+      test('should create user successfully', () async {
+        // Test implementation
+      });
+
+      test('should validate user data', () async {
+        // Test implementation
+      });
+    });
+  });
+}
+```
+
+### 2. Meaningful Test Names
+
+```dart
+// Good: Descriptive test names
+test('should return user list when repository call succeeds', () async {
+  // Test implementation
+});
+
+test('should throw exception when repository returns null', () async {
+  // Test implementation
+});
+
+// Bad: Vague test names
+test('test user loading', () async {
+  // Test implementation
+});
+```
+
+### 3. Arrange-Act-Assert
+
+```dart
+test('should update user profile successfully', () async {
+  // Arrange
+  final user = UserBuilder().withName('John').build();
+  final updateRequest = UserUpdateRequest(name: 'Jane');
+  final updatedUser = user.copyWith(name: 'Jane');
+
+  when(mockRepository.updateUser(updateRequest))
+      .thenAnswer((_) async => updatedUser);
+
+  // Act
+  await viewModel.updateProfile(updateRequest);
+
+  // Assert
+  expect(viewModel.state.status, UiStatus.success);
+  expect(viewModel.state.user?.name, 'Jane');
+  verify(mockRepository.updateUser(updateRequest)).called(1);
+});
+```
+
+## Next Steps
+
+- [See Complete Examples](/examples/post-module)
+- [Explore API Reference](/api/modular-core)
+- [Learn about Architecture](/architecture/overview)
+
+---
+
+Comprehensive testing ensures the reliability and maintainability of your modular Flutter applications. Following these patterns will help you build confidence in your code and catch issues early.

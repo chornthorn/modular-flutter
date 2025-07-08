@@ -1,0 +1,368 @@
+---
+title: Installation Guide
+description: Detailed installation instructions for Modular Flutter
+---
+
+This guide provides detailed instructions for setting up the Modular Flutter development environment.
+
+## System Requirements
+
+### Operating System
+
+- **macOS**: 10.14 (Mojave) or later
+- **Windows**: Windows 10 or later
+- **Linux**: Ubuntu 18.04 or later
+
+### Software Requirements
+
+- **Flutter SDK**: 3.8.1 or later
+- **Dart SDK**: 3.8.1 or later (included with Flutter)
+- **Git**: Latest version
+- **Code Editor**: VS Code, Android Studio, or IntelliJ IDEA
+
+## Flutter SDK Installation
+
+### macOS
+
+1. **Download Flutter SDK**:
+
+   ```bash
+   git clone https://github.com/flutter/flutter.git -b stable
+   ```
+
+2. **Add to PATH**:
+
+   ```bash
+   export PATH="$PATH:`pwd`/flutter/bin"
+   ```
+
+3. **Add to shell profile**:
+   ```bash
+   echo 'export PATH="$PATH:$HOME/flutter/bin"' >> ~/.zshrc
+   source ~/.zshrc
+   ```
+
+### Windows
+
+1. **Download Flutter SDK** from [flutter.dev](https://flutter.dev/docs/get-started/install/windows)
+
+2. **Extract and add to PATH**:
+   - Extract to `C:\flutter`
+   - Add `C:\flutter\bin` to your PATH environment variable
+
+### Linux
+
+1. **Download Flutter SDK**:
+
+   ```bash
+   git clone https://github.com/flutter/flutter.git -b stable
+   ```
+
+2. **Add to PATH**:
+   ```bash
+   export PATH="$PATH:$HOME/flutter/bin"
+   echo 'export PATH="$PATH:$HOME/flutter/bin"' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+## Verify Installation
+
+Run the Flutter doctor to verify your installation:
+
+```bash
+flutter doctor
+```
+
+This will check for:
+
+- Flutter SDK installation
+- Android toolchain
+- iOS toolchain (macOS only)
+- IDE plugins
+- Connected devices
+
+## Project Setup
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/your-username/modular-flutter.git
+cd modular-flutter
+```
+
+### 2. Install Melos
+
+Melos is used for managing the multi-package workspace:
+
+```bash
+dart pub global activate melos
+```
+
+### 3. Bootstrap the Workspace
+
+This will install dependencies for all packages:
+
+```bash
+melos bootstrap
+```
+
+### 4. Verify Setup
+
+Check that all packages are properly configured:
+
+```bash
+melos list
+```
+
+You should see:
+
+- `modular_core`
+- `modular_flutter`
+- `viewmodel`
+- `example`
+
+## IDE Configuration
+
+### VS Code
+
+1. **Install Extensions**:
+
+   - Flutter
+   - Dart
+   - Dart Data Class Generator (optional)
+
+2. **Configure Settings**:
+   ```json
+   {
+     "dart.flutterSdkPath": "/path/to/flutter",
+     "dart.enableSdkFormatter": true,
+     "dart.lineLength": 80
+   }
+   ```
+
+### Android Studio
+
+1. **Install Plugins**:
+
+   - Flutter
+   - Dart
+
+2. **Configure SDK Path**:
+   - Go to File → Settings → Languages & Frameworks → Flutter
+   - Set Flutter SDK path
+
+### IntelliJ IDEA
+
+1. **Install Plugins**:
+
+   - Flutter
+   - Dart
+
+2. **Configure Project**:
+   - Open the project root directory
+   - IntelliJ should automatically detect the Flutter project
+
+## Platform-Specific Setup
+
+### Android
+
+1. **Install Android Studio** with Android SDK
+2. **Accept licenses**:
+   ```bash
+   flutter doctor --android-licenses
+   ```
+3. **Connect device or start emulator**
+
+### iOS (macOS only)
+
+1. **Install Xcode** from Mac App Store
+2. **Install command line tools**:
+   ```bash
+   sudo xcode-select --install
+   ```
+3. **Accept licenses**:
+   ```bash
+   sudo xcodebuild -license
+   ```
+
+### Web
+
+Web support is included by default. Enable it with:
+
+```bash
+flutter config --enable-web
+```
+
+### Desktop
+
+Enable desktop support:
+
+```bash
+# macOS
+flutter config --enable-macos-desktop
+
+# Windows
+flutter config --enable-windows-desktop
+
+# Linux
+flutter config --enable-linux-desktop
+```
+
+## Running the Example
+
+### Mobile/Desktop
+
+```bash
+cd example
+flutter run
+```
+
+### Web
+
+```bash
+cd example
+flutter run -d web-server --web-port 8080
+```
+
+### Specific Platform
+
+```bash
+# Android
+flutter run -d android
+
+# iOS
+flutter run -d ios
+
+# Web
+flutter run -d web-server
+
+# macOS
+flutter run -d macos
+
+# Windows
+flutter run -d windows
+
+# Linux
+flutter run -d linux
+```
+
+## Development Workflow
+
+### Code Generation
+
+Generate code for state classes:
+
+```bash
+melos generate
+```
+
+### Testing
+
+Run all tests:
+
+```bash
+melos test
+```
+
+### Code Analysis
+
+Check code quality:
+
+```bash
+melos analyze
+```
+
+### Formatting
+
+Format code:
+
+```bash
+melos format
+```
+
+## Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+# API Configuration
+API_BASE_URL=https://api.example.com
+APP_NAME=My Flutter App
+DEBUG_MODE=true
+
+# Feature Flags
+FEATURE_NEW_UI=true
+FEATURE_ANALYTICS=false
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Flutter command not found**:
+
+   - Check PATH configuration
+   - Restart terminal
+
+2. **Android licenses not accepted**:
+
+   ```bash
+   flutter doctor --android-licenses
+   ```
+
+3. **iOS simulator not found**:
+
+   ```bash
+   sudo xcode-select --install
+   ```
+
+4. **Web not enabled**:
+   ```bash
+   flutter config --enable-web
+   ```
+
+### Performance Issues
+
+1. **Slow builds**:
+
+   - Use `flutter run --release` for production builds
+   - Clear build cache: `flutter clean`
+
+2. **Memory issues**:
+   - Increase heap size: `export FLUTTER_BUILD_MEMORY=4096`
+
+### Package Issues
+
+1. **Dependency conflicts**:
+
+   ```bash
+   melos clean
+   melos bootstrap
+   ```
+
+2. **Code generation issues**:
+   ```bash
+   melos generate
+   ```
+
+## Getting Help
+
+If you encounter issues:
+
+1. **Check Flutter doctor**:
+
+   ```bash
+   flutter doctor -v
+   ```
+
+2. **Search existing issues** on GitHub
+
+3. **Create a new issue** with:
+   - Flutter version (`flutter --version`)
+   - Operating system
+   - Error messages
+   - Steps to reproduce
+
+---
+
+You're now ready to start developing with Modular Flutter! 🎉

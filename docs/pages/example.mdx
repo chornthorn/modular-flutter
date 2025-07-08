@@ -1,0 +1,427 @@
+---
+title: Code Examples
+description: Common patterns and code snippets for Modular Flutter
+---
+
+This page contains practical code examples demonstrating common patterns and implementations in Modular Flutter.
+
+## Creating a Simple Module
+
+Here's how to create a basic module:
+
+```dart
+class UserModule extends Module<UserRouter> {
+  @override
+  UserRouter createRouter() => UserRouter();
+
+  @override
+  String get moduleName => 'user';
+
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register services
+    locator.registerLazySingleton<UserService>(
+      () => UserService(apiBaseUrl: appConfig.apiBaseUrl),
+    );
+
+    // Register repositories
+    locator.registerLazySingleton<UserRepository>(
+      () => UserRepositoryImpl(locator.get<UserService>()),
+    );
+  }
+}
+```
+
+## State Management with ViewModel
+
+### Define State
+
+```dart
+@freezed
+class UserState with _$UserState implements UiState {
+  const factory UserState({
+    @Default(UiStatus.initial) UiStatus status,
+    User? user,
+    String? errorMessage,
+  }) = _UserState;
+
+  const UserState._();
+
+  // Helper methods
+  UserState get loading => copyWith(status: UiStatus.loading);
+  UserState success(User user) => copyWith(
+    status: UiStatus.success,
+    user: user,
+    errorMessage: null,
+  );
+  UserState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+```
+
+### Create ViewModel
+
+```dart
+class UserViewModel extends ViewModel<UserState> {
+  final UserRepository _repository;
+
+  UserViewModel(this._repository) : super(const UserState());
+
+  @override
+  Future<void> onInit() async {
+    await loadUser();
+  }
+
+  Future<void> loadUser() async {
+    try {
+      state = state.loading;
+      final user = await _repository.getCurrentUser();
+      state = state.success(user);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+}
+```
+
+## Error Handling with Result Types
+
+```dart
+class UserService {
+  Future<Result<User, String>> getUser(int id) async {
+    try {
+      final response = await _apiClient.get('/users/$id');
+      if (response.statusCode == 200) {
+        final user = User.fromJson(response.data);
+        return Result.ok(user);
+      } else {
+        return Result.err('Failed to load user');
+      }
+    } catch (e) {
+      return Result.err('Network error: ${e.toString()}');
+    }
+  }
+}
+
+// Usage in ViewModel
+Future<void> loadUser(int id) async {
+  final result = await _userService.getUser(id);
+
+  result.match(
+    onOk: (user) => state = state.success(user),
+    onErr: (error) => state = state.error(error),
+  );
+}
+```
+
+## Configuration Management
+
+```dart
+class MyAppConfig extends AppConfig {
+  @override
+  String get apiBaseUrl =>
+    getConfigValue('API_BASE_URL') ?? 'https://api.default.com';
+
+  @override
+  String get appName =>
+    getConfigValue('APP_NAME') ?? 'My App';
+
+  @override
+  bool get isDebugMode =>
+    getBoolValue('DEBUG_MODE', fallback: false);
+
+  // Custom configuration
+  String get analyticsKey =>
+    getRequiredValue('ANALYTICS_KEY');
+
+  bool get isAnalyticsEnabled =>
+    isFeatureEnabled('ANALYTICS');
+}
+```
+
+## Routing with GoRouter
+
+```dart
+class UserRouter extends ModuleRouter {
+  @override
+  String get basePath => '/users';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'user-list',
+      builder: (context, state) => const UserListScreen(),
+    ),
+    GoRoute(
+      path: '$basePath/:userId',
+      name: 'user-details',
+      builder: (context, state) {
+        final userId = state.pathParameters['userId']!;
+        return UserDetailsScreen(userId: userId);
+      },
+    ),
+    GoRoute(
+      path: '$basePath/:userId/edit',
+      name: 'user-edit',
+      builder: (context, state) {
+        final userId = state.pathParameters['userId']!;
+        return UserEditScreen(userId: userId);
+      },
+    ),
+  ];
+}
+```
+
+## Testing Patterns
+
+### Unit Testing ViewModels
+
+```dart
+void main() {
+  group('UserViewModel', () {
+    late MockUserRepository mockRepository;
+    late UserViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockUserRepository();
+      viewModel = UserViewModel(mockRepository);
+    });
+
+    test('should load user successfully', () async {
+      // Arrange
+      final user = User(id: 1, name: 'John Doe');
+      when(mockRepository.getCurrentUser())
+          .thenAnswer((_) async => user);
+
+      // Act
+      await viewModel.loadUser();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.user, user);
+    });
+
+    test('should handle errors gracefully', () async {
+      // Arrange
+      when(mockRepository.getCurrentUser())
+          .thenThrow(Exception('Network error'));
+
+      // Act
+      await viewModel.loadUser();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.error);
+      expect(viewModel.state.errorMessage, contains('Network error'));
+    });
+  });
+}
+```
+
+### Widget Testing
+
+```dart
+void main() {
+  group('UserListScreen', () {
+    testWidgets('should display users when loaded', (tester) async {
+      // Arrange
+      final users = [
+        User(id: 1, name: 'John Doe'),
+        User(id: 2, name: 'Jane Smith'),
+      ];
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userListViewModelProvider.overrideWith(
+              (ref) => MockUserListViewModel(users),
+            ),
+          ],
+          child: const MaterialApp(home: UserListScreen()),
+        ),
+      );
+
+      // Assert
+      expect(find.text('John Doe'), findsOneWidget);
+      expect(find.text('Jane Smith'), findsOneWidget);
+    });
+  });
+}
+```
+
+## UI Patterns
+
+### Loading States
+
+```dart
+class UserScreen extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(userViewModelProvider);
+
+    return Scaffold(
+      body: switch (state.status) {
+        UiStatus.initial || UiStatus.loading =>
+          const Center(child: CircularProgressIndicator()),
+
+        UiStatus.success =>
+          UserContent(user: state.user!),
+
+        UiStatus.error =>
+          ErrorWidget(
+            message: state.errorMessage!,
+            onRetry: () => ref.read(userViewModelProvider.notifier).loadUser(),
+          ),
+      },
+    );
+  }
+}
+```
+
+### Pull-to-Refresh
+
+```dart
+class UserListScreen extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(userListViewModelProvider);
+    final viewModel = ref.read(userListViewModelProvider.notifier);
+
+    return Scaffold(
+      body: RefreshIndicator(
+        onRefresh: viewModel.refreshUsers,
+        child: ListView.builder(
+          itemCount: state.users.length,
+          itemBuilder: (context, index) {
+            final user = state.users[index];
+            return UserListItem(
+              user: user,
+              onTap: () => context.go('/users/${user.id}'),
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+```
+
+## Environment-Specific Configuration
+
+### Development Environment
+
+```env
+# .env.dev
+API_BASE_URL=https://dev-api.example.com
+APP_NAME=My App (Dev)
+DEBUG_MODE=true
+FEATURE_ANALYTICS=false
+```
+
+### Production Environment
+
+```env
+# .env.prod
+API_BASE_URL=https://api.example.com
+APP_NAME=My App
+DEBUG_MODE=false
+FEATURE_ANALYTICS=true
+```
+
+### Loading Environment
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Load environment-specific configuration
+  const environment = String.fromEnvironment('ENV', defaultValue: 'dev');
+
+  await Modular.register((locator) async {
+    final config = MyAppConfig();
+    await config.loadEnvVariables('.env.$environment');
+    locator.registerLazySingleton<AppConfig>(() => config);
+  });
+
+  runApp(MyApp());
+}
+```
+
+## Best Practices
+
+### 1. **Consistent Error Handling**
+
+```dart
+// Always use Result types for operations that can fail
+Future<Result<List<User>, String>> getUsers() async {
+  try {
+    final users = await _apiService.getUsers();
+    return Result.ok(users);
+  } catch (e) {
+    return Result.err('Failed to load users: ${e.toString()}');
+  }
+}
+```
+
+### 2. **State Transitions**
+
+```dart
+// Use helper methods for common state transitions
+extension UserStateExtensions on UserState {
+  UserState get loading => copyWith(status: UiStatus.loading);
+  UserState success(User user) => copyWith(
+    status: UiStatus.success,
+    user: user,
+    errorMessage: null,
+  );
+  UserState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+```
+
+### 3. **Dependency Organization**
+
+```dart
+class UserModule extends Module<UserRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register in order of dependencies
+    _registerServices(locator, appConfig);
+    _registerRepositories(locator);
+    _registerUseCases(locator);
+  }
+
+  void _registerServices(GetIt locator, AppConfig appConfig) {
+    locator.registerLazySingleton<UserService>(
+      () => UserService(apiBaseUrl: appConfig.apiBaseUrl),
+    );
+  }
+
+  void _registerRepositories(GetIt locator) {
+    locator.registerLazySingleton<UserRepository>(
+      () => UserRepositoryImpl(locator.get<UserService>()),
+    );
+  }
+
+  void _registerUseCases(GetIt locator) {
+    locator.registerLazySingleton<GetUserUseCase>(
+      () => GetUserUseCase(locator.get<UserRepository>()),
+    );
+  }
+}
+```
+
+## Next Steps
+
+- [Complete Post Module Example](/examples/post-module)
+- [Authentication Module Example](/examples/authentication)
+- [Configuration Examples](/examples/configuration)
+
+---
+
+These examples provide a solid foundation for building with Modular Flutter. Adapt them to your specific needs and requirements.

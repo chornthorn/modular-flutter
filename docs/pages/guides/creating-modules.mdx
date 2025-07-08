@@ -1,0 +1,877 @@
+---
+title: Creating Modules
+description: Step-by-step guide to creating feature modules in Modular Flutter
+---
+
+# Creating Modules
+
+This guide walks you through creating a new feature module from scratch using the Modular Flutter architecture. We'll build a complete "Tasks" module as an example.
+
+## Prerequisites
+
+Before creating a module, ensure you have:
+
+- Basic understanding of the [Modular Flutter architecture](/architecture/overview)
+- Familiarity with [Riverpod state management](https://riverpod.dev)
+- Understanding of [freezed](https://pub.dev/packages/freezed) for immutable classes
+
+## Step 1: Module Structure
+
+Create the module directory structure:
+
+```
+lib/modules/tasks/
+├── models/
+│   └── task_model.dart
+├── providers/
+│   └── task_providers.dart
+├── repositories/
+│   ├── task_repository.dart
+│   └── task_repository_impl.dart
+├── screens/
+│   ├── task_list_screen.dart
+│   └── task_details_screen.dart
+├── services/
+│   └── task_service.dart
+├── states/
+│   ├── task_list_state.dart
+│   └── task_details_state.dart
+├── viewmodels/
+│   ├── task_list_viewmodel.dart
+│   └── task_details_viewmodel.dart
+├── widgets/
+│   └── task_item_widget.dart
+├── task_module.dart
+└── task_router.dart
+```
+
+## Step 2: Define the Model
+
+Create the domain model for your feature:
+
+```dart
+// lib/modules/tasks/models/task_model.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+
+part 'task_model.freezed.dart';
+part 'task_model.g.dart';
+
+@freezed
+class Task with _$Task {
+  const factory Task({
+    required String id,
+    required String title,
+    required String description,
+    required DateTime createdAt,
+    @Default(false) bool isCompleted,
+    DateTime? completedAt,
+    @Default(TaskPriority.medium) TaskPriority priority,
+  }) = _Task;
+
+  const Task._();
+
+  factory Task.fromJson(Map<String, dynamic> json) => _$TaskFromJson(json);
+
+  // Helper methods
+  bool get isOverdue =>
+      !isCompleted &&
+      createdAt.isBefore(DateTime.now().subtract(const Duration(days: 7)));
+
+  String get displayTitle =>
+      title.isEmpty ? 'Untitled Task' : title;
+}
+
+enum TaskPriority {
+  @JsonValue('low')
+  low,
+  @JsonValue('medium')
+  medium,
+  @JsonValue('high')
+  high,
+}
+```
+
+## Step 3: Create the Service Layer
+
+Define the service that handles external API calls:
+
+```dart
+// lib/modules/tasks/services/task_service.dart
+import 'package:dio/dio.dart';
+import '../models/task_model.dart';
+
+class TaskService {
+  final Dio _dio;
+  final String _baseUrl;
+
+  TaskService({
+    required Dio dio,
+    required String baseUrl,
+  }) : _dio = dio, _baseUrl = baseUrl;
+
+  Future<List<Task>> getAllTasks() async {
+    try {
+      final response = await _dio.get('$_baseUrl/tasks');
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data['data'];
+        return data.map((json) => Task.fromJson(json)).toList();
+      }
+
+      throw Exception('Failed to load tasks');
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  Future<Task> getTaskById(String id) async {
+    try {
+      final response = await _dio.get('$_baseUrl/tasks/$id');
+
+      if (response.statusCode == 200) {
+        return Task.fromJson(response.data['data']);
+      }
+
+      throw Exception('Task not found');
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  Future<Task> createTask(Task task) async {
+    try {
+      final response = await _dio.post(
+        '$_baseUrl/tasks',
+        data: task.toJson(),
+      );
+
+      if (response.statusCode == 201) {
+        return Task.fromJson(response.data['data']);
+      }
+
+      throw Exception('Failed to create task');
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  Future<Task> updateTask(Task task) async {
+    try {
+      final response = await _dio.put(
+        '$_baseUrl/tasks/${task.id}',
+        data: task.toJson(),
+      );
+
+      if (response.statusCode == 200) {
+        return Task.fromJson(response.data['data']);
+      }
+
+      throw Exception('Failed to update task');
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+
+  Future<void> deleteTask(String id) async {
+    try {
+      final response = await _dio.delete('$_baseUrl/tasks/$id');
+
+      if (response.statusCode != 204) {
+        throw Exception('Failed to delete task');
+      }
+    } catch (e) {
+      throw Exception('Network error: ${e.toString()}');
+    }
+  }
+}
+```
+
+## Step 4: Implement the Repository
+
+Create the repository pattern for data access:
+
+```dart
+// lib/modules/tasks/repositories/task_repository.dart
+import '../models/task_model.dart';
+
+abstract class TaskRepository {
+  Future<List<Task>> getAllTasks();
+  Future<Task> getTaskById(String id);
+  Future<Task> createTask(Task task);
+  Future<Task> updateTask(Task task);
+  Future<void> deleteTask(String id);
+}
+
+// lib/modules/tasks/repositories/task_repository_impl.dart
+import '../models/task_model.dart';
+import '../services/task_service.dart';
+import 'task_repository.dart';
+
+class TaskRepositoryImpl implements TaskRepository {
+  final TaskService _taskService;
+
+  TaskRepositoryImpl(this._taskService);
+
+  @override
+  Future<List<Task>> getAllTasks() async {
+    return await _taskService.getAllTasks();
+  }
+
+  @override
+  Future<Task> getTaskById(String id) async {
+    return await _taskService.getTaskById(id);
+  }
+
+  @override
+  Future<Task> createTask(Task task) async {
+    return await _taskService.createTask(task);
+  }
+
+  @override
+  Future<Task> updateTask(Task task) async {
+    return await _taskService.updateTask(task);
+  }
+
+  @override
+  Future<void> deleteTask(String id) async {
+    return await _taskService.deleteTask(id);
+  }
+}
+```
+
+## Step 5: Define UI States
+
+Create freezed state classes for your ViewModels:
+
+```dart
+// lib/modules/tasks/states/task_list_state.dart
+import 'package:freezed_annotation/freezed_annotation.dart';
+import 'package:viewmodel/viewmodel.dart';
+import '../models/task_model.dart';
+
+part 'task_list_state.freezed.dart';
+
+@freezed
+class TaskListState with _$TaskListState implements UiState {
+  const factory TaskListState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default([]) List<Task> tasks,
+    @Default([]) List<Task> selectedTasks,
+    @Default(false) bool isSelectionMode,
+    @Default('') String searchQuery,
+    @Default(TaskFilter.all) TaskFilter filter,
+    String? errorMessage,
+  }) = _TaskListState;
+
+  const TaskListState._();
+
+  // State transition helpers
+  TaskListState get loading => copyWith(status: UiStatus.loading);
+
+  TaskListState success(List<Task> tasks) => copyWith(
+    status: UiStatus.success,
+    tasks: tasks,
+    errorMessage: null,
+  );
+
+  TaskListState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+
+  // Filtering helpers
+  List<Task> get filteredTasks {
+    var filtered = tasks;
+
+    // Apply search filter
+    if (searchQuery.isNotEmpty) {
+      filtered = filtered.where((task) =>
+        task.title.toLowerCase().contains(searchQuery.toLowerCase()) ||
+        task.description.toLowerCase().contains(searchQuery.toLowerCase())
+      ).toList();
+    }
+
+    // Apply status filter
+    filtered = switch (filter) {
+      TaskFilter.all => filtered,
+      TaskFilter.completed => filtered.where((task) => task.isCompleted).toList(),
+      TaskFilter.pending => filtered.where((task) => !task.isCompleted).toList(),
+      TaskFilter.overdue => filtered.where((task) => task.isOverdue).toList(),
+    };
+
+    return filtered;
+  }
+
+  // Selection helpers
+  TaskListState toggleSelection(Task task) {
+    final isSelected = selectedTasks.contains(task);
+    final updatedSelection = isSelected
+        ? selectedTasks.where((t) => t.id != task.id).toList()
+        : [...selectedTasks, task];
+
+    return copyWith(
+      selectedTasks: updatedSelection,
+      isSelectionMode: updatedSelection.isNotEmpty,
+    );
+  }
+
+  TaskListState clearSelection() => copyWith(
+    selectedTasks: [],
+    isSelectionMode: false,
+  );
+}
+
+enum TaskFilter {
+  all,
+  completed,
+  pending,
+  overdue,
+}
+```
+
+## Step 6: Create ViewModels
+
+Implement the ViewModel for business logic:
+
+```dart
+// lib/modules/tasks/viewmodels/task_list_viewmodel.dart
+import 'package:viewmodel/viewmodel.dart';
+import '../models/task_model.dart';
+import '../repositories/task_repository.dart';
+import '../states/task_list_state.dart';
+
+class TaskListViewModel extends ViewModel<TaskListState> {
+  final TaskRepository _taskRepository;
+
+  TaskListViewModel(this._taskRepository) : super(const TaskListState());
+
+  @override
+  Future<void> onInit() async {
+    await loadTasks();
+  }
+
+  Future<void> loadTasks() async {
+    try {
+      state = state.loading;
+      final tasks = await _taskRepository.getAllTasks();
+      state = state.success(tasks);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  Future<void> refreshTasks() async {
+    await loadTasks();
+  }
+
+  void updateSearchQuery(String query) {
+    state = state.copyWith(searchQuery: query);
+  }
+
+  void updateFilter(TaskFilter filter) {
+    state = state.copyWith(filter: filter);
+  }
+
+  void toggleTaskSelection(Task task) {
+    state = state.toggleSelection(task);
+  }
+
+  void clearSelection() {
+    state = state.clearSelection();
+  }
+
+  Future<void> deleteSelectedTasks() async {
+    if (state.selectedTasks.isEmpty) return;
+
+    try {
+      state = state.loading;
+
+      for (final task in state.selectedTasks) {
+        await _taskRepository.deleteTask(task.id);
+      }
+
+      await loadTasks();
+      state = state.clearSelection();
+    } catch (e) {
+      state = state.error('Failed to delete tasks: ${e.toString()}');
+    }
+  }
+
+  Future<void> toggleTaskCompletion(Task task) async {
+    try {
+      final updatedTask = task.copyWith(
+        isCompleted: !task.isCompleted,
+        completedAt: !task.isCompleted ? DateTime.now() : null,
+      );
+
+      await _taskRepository.updateTask(updatedTask);
+      await loadTasks();
+    } catch (e) {
+      state = state.error('Failed to update task: ${e.toString()}');
+    }
+  }
+}
+```
+
+## Step 7: Create Providers
+
+Define Riverpod providers for dependency injection:
+
+```dart
+// lib/modules/tasks/providers/task_providers.dart
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:get_it/get_it.dart';
+import '../repositories/task_repository.dart';
+import '../states/task_list_state.dart';
+import '../viewmodels/task_list_viewmodel.dart';
+
+// Repository provider
+final taskRepositoryProvider = Provider<TaskRepository>((ref) {
+  return GetIt.instance<TaskRepository>();
+});
+
+// ViewModels
+final taskListViewModelProvider =
+    StateNotifierProvider<TaskListViewModel, TaskListState>((ref) {
+  final repository = ref.read(taskRepositoryProvider);
+  return TaskListViewModel(repository);
+});
+
+// Computed providers
+final filteredTasksProvider = Provider<List<Task>>((ref) {
+  final state = ref.watch(taskListViewModelProvider);
+  return state.filteredTasks;
+});
+
+final taskStatsProvider = Provider<TaskStats>((ref) {
+  final tasks = ref.watch(filteredTasksProvider);
+  return TaskStats(
+    total: tasks.length,
+    completed: tasks.where((t) => t.isCompleted).length,
+    pending: tasks.where((t) => !t.isCompleted).length,
+    overdue: tasks.where((t) => t.isOverdue).length,
+  );
+});
+
+class TaskStats {
+  final int total;
+  final int completed;
+  final int pending;
+  final int overdue;
+
+  TaskStats({
+    required this.total,
+    required this.completed,
+    required this.pending,
+    required this.overdue,
+  });
+}
+```
+
+## Step 8: Create the Router
+
+Define routing for your module:
+
+```dart
+// lib/modules/tasks/task_router.dart
+import 'package:go_router/go_router.dart';
+import 'package:modular_core/modular_core.dart';
+import 'screens/task_list_screen.dart';
+import 'screens/task_details_screen.dart';
+
+class TaskRouter extends ModuleRouter {
+  @override
+  String get basePath => '/tasks';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'task-list',
+      builder: (context, state) => const TaskListScreen(),
+      routes: [
+        GoRoute(
+          path: '/create',
+          name: 'task-create',
+          builder: (context, state) => const TaskDetailsScreen(),
+        ),
+        GoRoute(
+          path: '/:taskId',
+          name: 'task-details',
+          builder: (context, state) {
+            final taskId = state.pathParameters['taskId']!;
+            return TaskDetailsScreen(taskId: taskId);
+          },
+          routes: [
+            GoRoute(
+              path: '/edit',
+              name: 'task-edit',
+              builder: (context, state) {
+                final taskId = state.pathParameters['taskId']!;
+                return TaskDetailsScreen(taskId: taskId, isEditing: true);
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  ];
+}
+```
+
+## Step 9: Create the Module Class
+
+Implement the main module class:
+
+```dart
+// lib/modules/tasks/task_module.dart
+import 'package:get_it/get_it.dart';
+import 'package:modular_core/modular_core.dart';
+import 'repositories/task_repository.dart';
+import 'repositories/task_repository_impl.dart';
+import 'services/task_service.dart';
+import 'task_router.dart';
+
+class TaskModule extends Module<TaskRouter> {
+  @override
+  TaskRouter createRouter() => TaskRouter();
+
+  @override
+  String get moduleName => 'tasks';
+
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register services
+    locator.registerLazySingleton<TaskService>(
+      () => TaskService(
+        dio: locator.get(),
+        baseUrl: appConfig.apiBaseUrl,
+      ),
+    );
+
+    // Register repositories
+    locator.registerLazySingleton<TaskRepository>(
+      () => TaskRepositoryImpl(locator.get<TaskService>()),
+    );
+  }
+}
+```
+
+## Step 10: Create UI Screens
+
+Implement the screens using the ViewModels:
+
+```dart
+// lib/modules/tasks/screens/task_list_screen.dart
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../providers/task_providers.dart';
+import '../states/task_list_state.dart';
+import '../widgets/task_item_widget.dart';
+
+class TaskListScreen extends ConsumerWidget {
+  const TaskListScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(taskListViewModelProvider);
+    final viewModel = ref.read(taskListViewModelProvider.notifier);
+    final stats = ref.watch(taskStatsProvider);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Tasks'),
+        actions: [
+          if (state.isSelectionMode) ...[
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: () => viewModel.deleteSelectedTasks(),
+            ),
+            IconButton(
+              icon: const Icon(Icons.clear),
+              onPressed: () => viewModel.clearSelection(),
+            ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.add),
+              onPressed: () => context.go('/tasks/create'),
+            ),
+          ],
+        ],
+      ),
+      body: Column(
+        children: [
+          // Search and Filter Section
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                TextField(
+                  decoration: const InputDecoration(
+                    hintText: 'Search tasks...',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                  onChanged: viewModel.updateSearchQuery,
+                ),
+                const SizedBox(height: 16),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: TaskFilter.values.map((filter) {
+                      final isSelected = state.filter == filter;
+                      return Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: FilterChip(
+                          label: Text(_getFilterLabel(filter)),
+                          selected: isSelected,
+                          onSelected: (_) => viewModel.updateFilter(filter),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Stats Section
+          if (stats.total > 0)
+            Container(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStat('Total', stats.total, Colors.blue),
+                  _buildStat('Completed', stats.completed, Colors.green),
+                  _buildStat('Pending', stats.pending, Colors.orange),
+                  _buildStat('Overdue', stats.overdue, Colors.red),
+                ],
+              ),
+            ),
+
+          // Tasks List
+          Expanded(
+            child: _buildTasksList(context, state, viewModel),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTasksList(
+    BuildContext context,
+    TaskListState state,
+    TaskListViewModel viewModel,
+  ) {
+    return switch (state.status) {
+      UiStatus.loading => const Center(child: CircularProgressIndicator()),
+      UiStatus.error => Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(state.errorMessage ?? 'An error occurred'),
+              ElevatedButton(
+                onPressed: viewModel.refreshTasks,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      _ => RefreshIndicator(
+          onRefresh: viewModel.refreshTasks,
+          child: state.filteredTasks.isEmpty
+              ? const Center(child: Text('No tasks found'))
+              : ListView.builder(
+                  itemCount: state.filteredTasks.length,
+                  itemBuilder: (context, index) {
+                    final task = state.filteredTasks[index];
+                    final isSelected = state.selectedTasks.contains(task);
+
+                    return TaskItemWidget(
+                      task: task,
+                      isSelected: isSelected,
+                      isSelectionMode: state.isSelectionMode,
+                      onTap: () => state.isSelectionMode
+                          ? viewModel.toggleTaskSelection(task)
+                          : context.go('/tasks/${task.id}'),
+                      onLongPress: () => viewModel.toggleTaskSelection(task),
+                      onToggleComplete: () => viewModel.toggleTaskCompletion(task),
+                    );
+                  },
+                ),
+        ),
+    };
+  }
+
+  Widget _buildStat(String label, int value, Color color) {
+    return Column(
+      children: [
+        Text(
+          value.toString(),
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 12),
+        ),
+      ],
+    );
+  }
+
+  String _getFilterLabel(TaskFilter filter) {
+    return switch (filter) {
+      TaskFilter.all => 'All',
+      TaskFilter.completed => 'Completed',
+      TaskFilter.pending => 'Pending',
+      TaskFilter.overdue => 'Overdue',
+    };
+  }
+}
+```
+
+## Step 11: Register the Module
+
+Add your module to the main application:
+
+```dart
+// lib/main.dart
+import 'modules/tasks/task_module.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await Modular.register((locator) async {
+    // Register global dependencies
+    final config = AppConfigImpl();
+    await config.loadEnvVariables('.env');
+    locator.registerLazySingleton<AppConfig>(() => config);
+
+    locator.registerLazySingleton<Dio>(() => Dio());
+  });
+
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      child: ModularApp(
+        modules: [
+          AppModule(),
+          TaskModule(), // Add your new module here
+          // ... other modules
+        ],
+        child: const MyAppContent(),
+      ),
+    );
+  }
+}
+```
+
+## Step 12: Run Code Generation
+
+Generate the necessary files:
+
+```bash
+# Generate freezed classes
+flutter packages pub run build_runner build --delete-conflicting-outputs
+
+# Or use melos if configured
+melos generate
+```
+
+## Best Practices
+
+### 1. Module Independence
+
+- Each module should be self-contained
+- Avoid direct dependencies between modules
+- Use events or shared services for inter-module communication
+
+### 2. Error Handling
+
+- Always handle errors gracefully in ViewModels
+- Provide user-friendly error messages
+- Implement retry mechanisms where appropriate
+
+### 3. Testing
+
+- Write unit tests for ViewModels
+- Mock repositories and services
+- Test state transitions and business logic
+
+### 4. Performance
+
+- Use lazy loading for heavy operations
+- Implement pagination for large lists
+- Cache frequently accessed data
+
+### 5. Code Organization
+
+- Keep related files together
+- Use consistent naming conventions
+- Separate concerns (UI, business logic, data)
+
+## Common Patterns
+
+### Repository Pattern
+
+```dart
+abstract class Repository {
+  Future<List<Entity>> getAll();
+  Future<Entity> getById(String id);
+  Future<Entity> create(Entity entity);
+  Future<Entity> update(Entity entity);
+  Future<void> delete(String id);
+}
+```
+
+### Service Layer
+
+```dart
+class ApiService {
+  final Dio _dio;
+  final String _baseUrl;
+
+  Future<T> get<T>(String path) async {
+    // Implementation
+  }
+
+  Future<T> post<T>(String path, dynamic data) async {
+    // Implementation
+  }
+}
+```
+
+### Error Handling
+
+```dart
+class ViewModel {
+  Future<void> performAction() async {
+    try {
+      state = state.loading;
+      final result = await repository.action();
+      state = state.success(result);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+}
+```
+
+## Next Steps
+
+- [Learn about State Management](/guides/state-management)
+- [Explore Dependency Injection](/guides/dependency-injection)
+- [Understand Routing](/guides/routing)
+- [See Complete Examples](/examples/post-module)
+
+---
+
+You now have a complete module! This pattern can be replicated for any feature in your application, maintaining consistency and scalability across your Flutter project.

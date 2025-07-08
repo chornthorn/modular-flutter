@@ -1,0 +1,416 @@
+---
+title: Modular Core Package
+description: Core architecture components for modular Flutter applications
+---
+
+The `modular_core` package provides the foundational components for building modular Flutter applications. It contains framework-agnostic code that can be used across different platforms.
+
+## Overview
+
+Modular Core includes:
+
+- **Module System**: Abstract base classes for feature modules
+- **Dependency Injection**: Service locator pattern with GetIt
+- **Configuration Management**: Environment-based app configuration
+- **Error Handling**: Result types for robust error management
+- **Routing Abstraction**: Platform-agnostic routing interface
+
+## Key Components
+
+### 1. Module Base
+
+The `Module` class is the foundation of the modular architecture:
+
+```dart
+abstract class Module<T extends ModuleRouter> {
+  T? _router;
+
+  T get router => _router ??= createRouter();
+  List<RouteBase> get routes => router.routes;
+  String get moduleName;
+
+  T createRouter();
+  void registerDependencies(GetIt getIt, AppConfig appConfig);
+}
+```
+
+**Key Features:**
+
+- Generic router type for type safety
+- Lazy router initialization
+- Dependency registration interface
+- Module identification
+
+### 2. App Configuration
+
+The `AppConfig` class provides centralized configuration management:
+
+```dart
+abstract class AppConfig {
+  // Environment variable loading
+  Future<void> loadEnvVariables(String envFileName);
+
+  // Type-safe value getters
+  T? getConfigValue<T>(String key, {T? defaultValue});
+  bool getBoolValue(String key, {bool fallback = false});
+  int getIntValue(String key, {int fallback = 0});
+  String getRequiredValue(String key, {String? fallback});
+
+  // Feature flags
+  bool isFeatureEnabled(String featureName);
+
+  // Abstract properties
+  String get apiBaseUrl;
+  String get appName;
+  bool get isDebugMode;
+}
+```
+
+**Features:**
+
+- Environment variable integration with flutter_dotenv
+- Type-safe configuration access
+- Feature flag support
+- Required vs optional values
+
+### 3. Result Types
+
+Rust-inspired Result types for robust error handling:
+
+```dart
+sealed class Result<T, E> {
+  const Result();
+
+  static Result<T, E> ok<T, E>(T value) => Success<T, E>(value);
+  static Result<T, E> err<T, E>(E error) => Failure<T, E>(error);
+
+  bool isOk();
+  bool isErr();
+  T unwrap();
+  E unwrapErr();
+  T unwrapOr(T defaultValue);
+
+  Result<U, E> map<U>(U Function(T) fn);
+  Result<T, F> mapErr<F>(F Function(E) fn);
+  Result<U, E> flatMap<U>(Result<U, E> Function(T) fn);
+
+  R match<R>({
+    required R Function(T value) onOk,
+    required R Function(E error) onErr,
+  });
+}
+```
+
+**Benefits:**
+
+- Explicit error handling
+- Functional programming patterns
+- Type-safe operations
+- Pattern matching support
+
+### 4. Module Router
+
+Abstract routing interface for modules:
+
+```dart
+abstract class ModuleRouter {
+  String get basePath;
+  List<RouteBase> get routes;
+}
+```
+
+### 5. Module Registry
+
+Manages module registration and initialization:
+
+```dart
+class ModuleRegistry {
+  static final List<Module> _modules = [];
+
+  static void registerModule(Module module);
+  static List<Module> get modules;
+  static Module? getModule(String name);
+  static List<RouteBase> getAllRoutes();
+}
+```
+
+## Usage Examples
+
+### Creating a Module
+
+```dart
+class AuthModule extends Module<AuthRouter> {
+  @override
+  AuthRouter createRouter() => AuthRouter();
+
+  @override
+  String get moduleName => 'auth';
+
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register services
+    locator.registerLazySingleton<AuthService>(
+      () => AuthService(
+        apiBaseUrl: appConfig.apiBaseUrl,
+        isDebugMode: appConfig.isDebugMode,
+      ),
+    );
+
+    // Register repositories
+    locator.registerLazySingleton<AuthRepository>(
+      () => AuthRepositoryImpl(locator.get<AuthService>()),
+    );
+
+    // Register use cases
+    locator.registerLazySingleton<LoginUseCase>(
+      () => LoginUseCase(locator.get<AuthRepository>()),
+    );
+  }
+}
+```
+
+### Implementing App Configuration
+
+```dart
+class ProductionAppConfig extends AppConfig {
+  ProductionAppConfig({Map<String, bool>? featureFlags})
+      : super(featureFlags: featureFlags);
+
+  @override
+  String get apiBaseUrl =>
+    getRequiredValue('API_BASE_URL', fallback: 'https://api.prod.com');
+
+  @override
+  String get appName =>
+    getConfigValue('APP_NAME') ?? 'My Production App';
+
+  @override
+  bool get isDebugMode => false;
+
+  // Custom configuration methods
+  String get analyticsKey => getRequiredValue('ANALYTICS_KEY');
+  Duration get requestTimeout => Duration(
+    seconds: getIntValue('REQUEST_TIMEOUT_SECONDS', fallback: 30),
+  );
+}
+```
+
+### Using Result Types
+
+```dart
+class UserService {
+  Future<Result<User, String>> getUser(int id) async {
+    try {
+      final response = await _httpClient.get('/users/$id');
+
+      if (response.statusCode == 200) {
+        final user = User.fromJson(response.data);
+        return Result.ok(user);
+      } else {
+        return Result.err('User not found');
+      }
+    } catch (e) {
+      return Result.err('Network error: ${e.toString()}');
+    }
+  }
+}
+
+// Usage in repository
+class UserRepositoryImpl implements UserRepository {
+  final UserService _userService;
+
+  UserRepositoryImpl(this._userService);
+
+  @override
+  Future<User> getCurrentUser() async {
+    final result = await _userService.getUser(currentUserId);
+
+    return result.match(
+      onOk: (user) => user,
+      onErr: (error) => throw Exception(error),
+    );
+  }
+}
+```
+
+## Dependencies
+
+The modular_core package depends on:
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  meta: ^1.16.0
+  go_router: ^16.0.0
+  get_it: ^8.0.3
+  flutter_dotenv: ^5.2.1
+```
+
+## Testing
+
+### Unit Testing Modules
+
+```dart
+void main() {
+  group('AuthModule', () {
+    late AuthModule module;
+    late GetIt locator;
+    late MockAppConfig mockConfig;
+
+    setUp(() {
+      module = AuthModule();
+      locator = GetIt.instance;
+      mockConfig = MockAppConfig();
+    });
+
+    tearDown(() {
+      locator.reset();
+    });
+
+    test('should register all dependencies', () {
+      // Arrange
+      when(mockConfig.apiBaseUrl).thenReturn('https://test.api.com');
+      when(mockConfig.isDebugMode).thenReturn(true);
+
+      // Act
+      module.registerDependencies(locator, mockConfig);
+
+      // Assert
+      expect(locator.isRegistered<AuthService>(), isTrue);
+      expect(locator.isRegistered<AuthRepository>(), isTrue);
+      expect(locator.isRegistered<LoginUseCase>(), isTrue);
+    });
+  });
+}
+```
+
+### Testing Result Types
+
+```dart
+void main() {
+  group('Result', () {
+    test('ok should create success result', () {
+      final result = Result.ok('success');
+
+      expect(result.isOk(), isTrue);
+      expect(result.isErr(), isFalse);
+      expect(result.unwrap(), equals('success'));
+    });
+
+    test('err should create failure result', () {
+      final result = Result.err('error');
+
+      expect(result.isOk(), isFalse);
+      expect(result.isErr(), isTrue);
+      expect(result.unwrapErr(), equals('error'));
+    });
+
+    test('match should handle both cases', () {
+      final okResult = Result.ok(42);
+      final errResult = Result.err('error');
+
+      final okValue = okResult.match(
+        onOk: (value) => 'Success: $value',
+        onErr: (error) => 'Error: $error',
+      );
+
+      final errValue = errResult.match(
+        onOk: (value) => 'Success: $value',
+        onErr: (error) => 'Error: $error',
+      );
+
+      expect(okValue, equals('Success: 42'));
+      expect(errValue, equals('Error: error'));
+    });
+  });
+}
+```
+
+## Best Practices
+
+### 1. Module Organization
+
+```dart
+class FeatureModule extends Module<FeatureRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register in dependency order
+    _registerServices(locator, appConfig);
+    _registerRepositories(locator);
+    _registerUseCases(locator);
+  }
+
+  void _registerServices(GetIt locator, AppConfig appConfig) {
+    // Register external services first
+  }
+
+  void _registerRepositories(GetIt locator) {
+    // Register data layer
+  }
+
+  void _registerUseCases(GetIt locator) {
+    // Register business logic
+  }
+}
+```
+
+### 2. Configuration Management
+
+```dart
+class AppConfigImpl extends AppConfig {
+  @override
+  Future<void> loadConfiguration() async {
+    // Load environment-specific config
+    const env = String.fromEnvironment('ENV', defaultValue: 'dev');
+    await loadEnvVariables('.env.$env');
+  }
+
+  // Use type-safe getters
+  Duration get networkTimeout => Duration(
+    milliseconds: getIntValue('NETWORK_TIMEOUT_MS', fallback: 5000),
+  );
+}
+```
+
+### 3. Error Handling
+
+```dart
+// Always use Result types for operations that can fail
+Future<Result<Data, AppError>> fetchData() async {
+  try {
+    final data = await _apiCall();
+    return Result.ok(data);
+  } on NetworkException catch (e) {
+    return Result.err(AppError.network(e.message));
+  } on ValidationException catch (e) {
+    return Result.err(AppError.validation(e.message));
+  } catch (e) {
+    return Result.err(AppError.unknown(e.toString()));
+  }
+}
+```
+
+## API Reference
+
+### Core Classes
+
+- `Module<T>`: Base class for feature modules
+- `AppConfig`: Configuration management base class
+- `Result<T, E>`: Error handling result type
+- `ModuleRouter`: Abstract routing interface
+
+### Utilities
+
+- `ModuleRegistry`: Module registration and management
+- `ServiceLocator`: Type alias for GetIt dependency injection
+
+## Next Steps
+
+- [Learn about Modular Flutter](/architecture/modular-flutter)
+- [Explore ViewModel Package](/architecture/viewmodel)
+- [Create Your First Module](/guides/creating-modules)
+
+---
+
+The modular_core package provides the essential building blocks for scalable Flutter applications.

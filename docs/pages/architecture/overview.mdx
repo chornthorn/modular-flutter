@@ -1,0 +1,301 @@
+---
+title: Architecture Overview
+description: Understanding the modular architecture of Flutter starter
+---
+
+Modular Flutter implements a clean, scalable architecture that separates concerns and promotes code reusability across large Flutter applications.
+
+## Core Principles
+
+### 1. **Modularity**
+
+Each feature is encapsulated in its own module with clear boundaries and responsibilities.
+
+### 2. **Dependency Injection**
+
+Services and dependencies are automatically injected using the service locator pattern.
+
+### 3. **Separation of Concerns**
+
+Business logic is separated from UI through the ViewModel pattern.
+
+### 4. **Type Safety**
+
+Comprehensive error handling using Result types and type-safe state management.
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Flutter Application                         │
+├─────────────────────────────────────────────────────────────────┤
+│                        UI Layer                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │   Screens   │  │   Widgets   │  │  Providers  │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+├─────────────────────────────────────────────────────────────────┤
+│                    Presentation Layer                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │ ViewModels  │  │    States   │  │   Events    │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+├─────────────────────────────────────────────────────────────────┤
+│                     Domain Layer                                │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │ Repositories│  │   Models    │  │ Use Cases   │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+├─────────────────────────────────────────────────────────────────┤
+│                      Data Layer                                 │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │  Services   │  │ Data Sources│  │   APIs      │              │
+│  └─────────────┘  └─────────────┘  └─────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+## Package Structure
+
+The architecture is divided into three main packages:
+
+### 1. **modular_core**
+
+The foundation package containing:
+
+- **Module Base**: Abstract base class for all modules
+- **App Config**: Environment configuration management
+- **Result Type**: Error handling with Rust-inspired Result types
+- **Service Locator**: Dependency injection container
+- **Module Router**: Routing abstraction
+
+### 2. **modular_flutter**
+
+Flutter-specific implementations:
+
+- **ModularApp**: Main app widget with module integration
+- **Module Management**: Registration and initialization
+- **Flutter Router Integration**: Seamless GoRouter integration
+
+### 3. **viewmodel**
+
+State management solution:
+
+- **ViewModel Base**: Abstract ViewModel with lifecycle management
+- **UI State**: Freezed-based state classes
+- **Status Management**: Loading, success, error states
+- **Riverpod Integration**: Provider-based state management
+
+## Module Structure
+
+Each feature module follows a consistent structure:
+
+```
+post_module/
+├── models/
+│   └── post_model.dart
+├── providers/
+│   └── post_providers.dart
+├── repositories/
+│   ├── post_repository.dart
+│   └── post_repository_impl.dart
+├── screens/
+│   ├── post_details_screen.dart
+│   └── posts_list_screen.dart
+├── services/
+│   └── post_service.dart
+├── states/
+│   ├── post_details_state.dart
+│   └── posts_list_state.dart
+├── viewmodels/
+│   ├── post_details_viewmodel.dart
+│   └── posts_list_viewmodel.dart
+├── post_module.dart
+└── post_router.dart
+```
+
+## Data Flow
+
+The data flow follows a unidirectional pattern:
+
+1. **User Interaction**: User interacts with UI components
+2. **ViewModel**: UI calls ViewModel methods
+3. **Repository**: ViewModel calls Repository methods
+4. **Service**: Repository calls Service methods
+5. **API/Data Source**: Service makes API calls
+6. **Result**: Data flows back through the layers
+7. **State Update**: ViewModel updates state
+8. **UI Update**: UI rebuilds based on state changes
+
+## Key Patterns
+
+### 1. **Module Pattern**
+
+Each module implements the `Module` interface:
+
+```dart
+class PostModule extends Module<PostRouter> {
+  @override
+  PostRouter createRouter() => PostRouter();
+
+  @override
+  String get moduleName => 'post';
+
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register services and repositories
+  }
+}
+```
+
+### 2. **Repository Pattern**
+
+Data access is abstracted through repositories:
+
+```dart
+abstract class PostRepository {
+  Future<List<Post>> fetchPosts();
+  Future<Post> getPost(int id);
+  Future<void> createPost(Post post);
+}
+
+class PostRepositoryImpl implements PostRepository {
+  final PostService _service;
+
+  PostRepositoryImpl(this._service);
+
+  @override
+  Future<List<Post>> fetchPosts() async {
+    return await _service.getPosts();
+  }
+}
+```
+
+### 3. **ViewModel Pattern**
+
+Business logic is encapsulated in ViewModels:
+
+```dart
+class PostsListViewModel extends ViewModel<PostsListState> {
+  final PostRepository _repository;
+
+  PostsListViewModel(this._repository) : super(const PostsListState());
+
+  @override
+  Future<void> onInit() async {
+    await loadPosts();
+  }
+
+  Future<void> loadPosts() async {
+    try {
+      state = state.loading;
+      final posts = await _repository.fetchPosts();
+      state = state.withPosts(posts);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+}
+```
+
+### 4. **State Management**
+
+States are immutable and type-safe using Freezed:
+
+```dart
+@freezed
+class PostsListState with _$PostsListState implements UiState {
+  const factory PostsListState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default([]) List<Post> posts,
+    String? errorMessage,
+  }) = _PostsListState;
+
+  const PostsListState._();
+
+  PostsListState get loading => copyWith(status: UiStatus.loading);
+  PostsListState withPosts(List<Post> posts) => copyWith(
+    status: UiStatus.success,
+    posts: posts,
+    errorMessage: null,
+  );
+  PostsListState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+```
+
+## Error Handling
+
+The architecture uses Result types for robust error handling:
+
+```dart
+Future<Result<List<Post>, String>> fetchPosts() async {
+  try {
+    final posts = await _apiService.getPosts();
+    return Result.ok(posts);
+  } catch (e) {
+    return Result.err(e.toString());
+  }
+}
+```
+
+## Configuration Management
+
+Application configuration is centralized and type-safe:
+
+```dart
+class AppConfigImpl extends AppConfig {
+  @override
+  String get apiBaseUrl => getConfigValue('API_BASE_URL') ?? 'https://api.default.com';
+
+  @override
+  String get appName => getConfigValue('APP_NAME') ?? 'Flutter App';
+
+  @override
+  bool get isDebugMode => getBoolValue('DEBUG_MODE', fallback: false);
+}
+```
+
+## Testing Strategy
+
+The architecture supports comprehensive testing:
+
+- **Unit Tests**: Test individual classes and functions
+- **Widget Tests**: Test UI components
+- **Integration Tests**: Test complete user flows
+- **Module Tests**: Test module registration and dependencies
+
+## Benefits
+
+### 1. **Scalability**
+
+- Easy to add new features as modules
+- Clear separation of concerns
+- Minimal coupling between modules
+
+### 2. **Maintainability**
+
+- Consistent structure across features
+- Easy to locate and modify code
+- Clear dependency relationships
+
+### 3. **Testability**
+
+- Easy to mock dependencies
+- Clear boundaries for testing
+- Comprehensive test coverage
+
+### 4. **Developer Experience**
+
+- Code generation for boilerplate
+- Type-safe development
+- Comprehensive error handling
+
+## Next Steps
+
+- [Learn about modular_core](/architecture/modular-core)
+- [Explore modular_flutter](/architecture/modular-flutter)
+- [Understand viewmodel](/architecture/viewmodel)
+- [Create your first module](/guides/creating-modules)
+
+---
+
+Ready to dive deeper? Explore the individual packages to understand how each component works together.

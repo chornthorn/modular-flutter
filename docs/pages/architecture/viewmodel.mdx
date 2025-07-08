@@ -1,0 +1,638 @@
+---
+title: ViewModel Package
+description: State management solution for modular Flutter applications
+---
+
+# ViewModel Package
+
+The `viewmodel` package provides a comprehensive state management solution built on top of Riverpod. It implements the ViewModel pattern with type-safe state management, lifecycle handling, and seamless Flutter integration.
+
+## Overview
+
+The ViewModel package includes:
+
+- **ViewModel Base Class**: Abstract ViewModel with lifecycle management
+- **UI State System**: Freezed-based immutable state classes
+- **Status Management**: Built-in loading, success, error states
+- **Riverpod Integration**: Seamless provider-based state management
+- **Observer Pattern**: State change monitoring and debugging
+
+## Key Components
+
+### 1. ViewModel Base Class
+
+The abstract `ViewModel` class provides the foundation for all ViewModels:
+
+```dart
+abstract class ViewModel<State extends UiState> extends StateNotifier<State> {
+  ViewModel(super.initialState) : super() {
+    onInit();
+  }
+
+  State get uiState => state;
+
+  Future<void> onInit() async {}
+}
+```
+
+**Features:**
+
+- Generic state type for type safety
+- Automatic initialization
+- State accessor methods
+- Lifecycle management
+
+### 2. UI State Interface
+
+All states must implement the `UiState` interface:
+
+```dart
+abstract class UiState {
+  UiStatus get status;
+  String? get errorMessage;
+}
+```
+
+### 3. Status Enumeration
+
+Built-in status types for common UI states:
+
+```dart
+enum UiStatus {
+  initial,    // Initial state before any action
+  loading,    // Loading/processing state
+  success,    // Successful operation
+  error,      // Error state
+}
+```
+
+### 4. ViewModel Observer
+
+Monitor ViewModel state changes for debugging and analytics:
+
+```dart
+class ViewModelObserver extends StateNotifier {
+  void onStateChange(String viewModelName, UiState oldState, UiState newState);
+  void onError(String viewModelName, Object error, StackTrace stackTrace);
+  void onDispose(String viewModelName);
+}
+```
+
+## Usage Examples
+
+### Creating a ViewModel
+
+```dart
+// 1. Define the state
+@freezed
+class UserProfileState with _$UserProfileState implements UiState {
+  const factory UserProfileState({
+    @Default(UiStatus.initial) UiStatus status,
+    User? user,
+    String? errorMessage,
+  }) = _UserProfileState;
+
+  const UserProfileState._();
+
+  // Helper methods for state transitions
+  UserProfileState get loading => copyWith(status: UiStatus.loading);
+
+  UserProfileState success(User user) => copyWith(
+    status: UiStatus.success,
+    user: user,
+    errorMessage: null,
+  );
+
+  UserProfileState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+
+// 2. Implement the ViewModel
+class UserProfileViewModel extends ViewModel<UserProfileState> {
+  final UserRepository _userRepository;
+
+  UserProfileViewModel(this._userRepository)
+      : super(const UserProfileState());
+
+  @override
+  Future<void> onInit() async {
+    await loadUserProfile();
+  }
+
+  Future<void> loadUserProfile() async {
+    try {
+      state = state.loading;
+      final user = await _userRepository.getCurrentUser();
+      state = state.success(user);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  Future<void> updateProfile(UserUpdateRequest request) async {
+    try {
+      state = state.loading;
+      final updatedUser = await _userRepository.updateUser(request);
+      state = state.success(updatedUser);
+    } catch (e) {
+      state = state.error('Failed to update profile: ${e.toString()}');
+    }
+  }
+}
+```
+
+### Riverpod Integration
+
+```dart
+// Provider definition
+final userProfileViewModelProvider =
+    StateNotifierProvider<UserProfileViewModel, UserProfileState>((ref) {
+  final repository = GetIt.instance<UserRepository>();
+  return UserProfileViewModel(repository);
+});
+
+// Usage in widgets
+class UserProfileScreen extends ConsumerWidget {
+  const UserProfileScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(userProfileViewModelProvider);
+    final viewModel = ref.read(userProfileViewModelProvider.notifier);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text('Profile')),
+      body: _buildBody(context, state, viewModel),
+    );
+  }
+
+  Widget _buildBody(
+    BuildContext context,
+    UserProfileState state,
+    UserProfileViewModel viewModel,
+  ) {
+    return switch (state.status) {
+      UiStatus.initial || UiStatus.loading =>
+        const Center(child: CircularProgressIndicator()),
+
+      UiStatus.success =>
+        UserProfileContent(
+          user: state.user!,
+          onUpdate: viewModel.updateProfile,
+        ),
+
+      UiStatus.error =>
+        ErrorView(
+          message: state.errorMessage!,
+          onRetry: viewModel.loadUserProfile,
+        ),
+    };
+  }
+}
+```
+
+## Advanced Patterns
+
+### 1. Complex State Management
+
+```dart
+@freezed
+class PostsListState with _$PostsListState implements UiState {
+  const factory PostsListState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default([]) List<Post> posts,
+    @Default([]) List<Post> selectedPosts,
+    @Default(false) bool isSelectionMode,
+    @Default(1) int currentPage,
+    @Default(false) bool hasMoreData,
+    String? errorMessage,
+    String? searchQuery,
+  }) = _PostsListState;
+
+  const PostsListState._();
+
+  // State transition helpers
+  PostsListState get loading => copyWith(status: UiStatus.loading);
+
+  PostsListState withPosts(List<Post> posts) => copyWith(
+    status: UiStatus.success,
+    posts: posts,
+    errorMessage: null,
+  );
+
+  PostsListState appendPosts(List<Post> newPosts) => copyWith(
+    posts: [...posts, ...newPosts],
+    currentPage: currentPage + 1,
+    hasMoreData: newPosts.isNotEmpty,
+  );
+
+  PostsListState toggleSelection(Post post) {
+    final isSelected = selectedPosts.contains(post);
+    final updatedSelection = isSelected
+        ? selectedPosts.where((p) => p.id != post.id).toList()
+        : [...selectedPosts, post];
+
+    return copyWith(
+      selectedPosts: updatedSelection,
+      isSelectionMode: updatedSelection.isNotEmpty,
+    );
+  }
+}
+```
+
+### 2. Form ViewModels
+
+```dart
+@freezed
+class LoginFormState with _$LoginFormState implements UiState {
+  const factory LoginFormState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default('') String email,
+    @Default('') String password,
+    @Default(false) bool isPasswordVisible,
+    @Default(false) bool rememberMe,
+    String? emailError,
+    String? passwordError,
+    String? errorMessage,
+  }) = _LoginFormState;
+
+  const LoginFormState._();
+
+  bool get isValid =>
+      emailError == null &&
+      passwordError == null &&
+      email.isNotEmpty &&
+      password.isNotEmpty;
+
+  LoginFormState get loading => copyWith(status: UiStatus.loading);
+
+  LoginFormState success() => copyWith(
+    status: UiStatus.success,
+    errorMessage: null,
+  );
+
+  LoginFormState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+
+class LoginFormViewModel extends ViewModel<LoginFormState> {
+  final AuthRepository _authRepository;
+
+  LoginFormViewModel(this._authRepository) : super(const LoginFormState());
+
+  void updateEmail(String email) {
+    state = state.copyWith(
+      email: email,
+      emailError: _validateEmail(email),
+    );
+  }
+
+  void updatePassword(String password) {
+    state = state.copyWith(
+      password: password,
+      passwordError: _validatePassword(password),
+    );
+  }
+
+  void togglePasswordVisibility() {
+    state = state.copyWith(isPasswordVisible: !state.isPasswordVisible);
+  }
+
+  void toggleRememberMe() {
+    state = state.copyWith(rememberMe: !state.rememberMe);
+  }
+
+  Future<void> login() async {
+    if (!state.isValid) return;
+
+    try {
+      state = state.loading;
+      await _authRepository.login(state.email, state.password);
+      state = state.success();
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  String? _validateEmail(String email) {
+    if (email.isEmpty) return 'Email is required';
+    if (!email.contains('@')) return 'Invalid email format';
+    return null;
+  }
+
+  String? _validatePassword(String password) {
+    if (password.isEmpty) return 'Password is required';
+    if (password.length < 6) return 'Password must be at least 6 characters';
+    return null;
+  }
+}
+```
+
+### 3. Pagination ViewModels
+
+```dart
+class PaginatedListViewModel<T> extends ViewModel<PaginatedListState<T>> {
+  final Future<List<T>> Function(int page, int limit) _fetchData;
+  final int _pageSize;
+
+  PaginatedListViewModel(this._fetchData, {int pageSize = 20})
+      : _pageSize = pageSize,
+        super(PaginatedListState<T>());
+
+  @override
+  Future<void> onInit() async {
+    await loadFirstPage();
+  }
+
+  Future<void> loadFirstPage() async {
+    try {
+      state = state.loading;
+      final items = await _fetchData(1, _pageSize);
+      state = state.withItems(items, hasMore: items.length == _pageSize);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  Future<void> loadNextPage() async {
+    if (!state.hasMoreData || state.status == UiStatus.loading) return;
+
+    try {
+      final nextPage = state.currentPage + 1;
+      final items = await _fetchData(nextPage, _pageSize);
+      state = state.appendItems(items, hasMore: items.length == _pageSize);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  Future<void> refresh() async {
+    await loadFirstPage();
+  }
+}
+```
+
+## Testing ViewModels
+
+### Unit Testing
+
+```dart
+void main() {
+  group('UserProfileViewModel', () {
+    late MockUserRepository mockRepository;
+    late UserProfileViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockUserRepository();
+      viewModel = UserProfileViewModel(mockRepository);
+    });
+
+    test('should load user profile on init', () async {
+      // Arrange
+      final user = User(id: 1, name: 'John Doe', email: 'john@example.com');
+      when(mockRepository.getCurrentUser()).thenAnswer((_) async => user);
+
+      // Act
+      await viewModel.onInit();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.user, user);
+      expect(viewModel.state.errorMessage, isNull);
+    });
+
+    test('should handle errors gracefully', () async {
+      // Arrange
+      when(mockRepository.getCurrentUser())
+          .thenThrow(Exception('Network error'));
+
+      // Act
+      await viewModel.loadUserProfile();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.error);
+      expect(viewModel.state.errorMessage, contains('Network error'));
+      expect(viewModel.state.user, isNull);
+    });
+
+    test('should update profile successfully', () async {
+      // Arrange
+      final request = UserUpdateRequest(name: 'Jane Doe');
+      final updatedUser = User(id: 1, name: 'Jane Doe', email: 'jane@example.com');
+      when(mockRepository.updateUser(request))
+          .thenAnswer((_) async => updatedUser);
+
+      // Act
+      await viewModel.updateProfile(request);
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.user, updatedUser);
+      verify(mockRepository.updateUser(request)).called(1);
+    });
+  });
+}
+```
+
+### Widget Testing with ViewModels
+
+```dart
+void main() {
+  group('UserProfileScreen', () {
+    testWidgets('should display user profile when loaded', (tester) async {
+      // Arrange
+      final user = User(id: 1, name: 'John Doe', email: 'john@example.com');
+      final mockViewModel = MockUserProfileViewModel();
+      when(mockViewModel.state).thenReturn(
+        UserProfileState(status: UiStatus.success, user: user),
+      );
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userProfileViewModelProvider.overrideWith((ref) => mockViewModel),
+          ],
+          child: const MaterialApp(home: UserProfileScreen()),
+        ),
+      );
+
+      // Assert
+      expect(find.text('John Doe'), findsOneWidget);
+      expect(find.text('john@example.com'), findsOneWidget);
+    });
+
+    testWidgets('should show loading indicator when loading', (tester) async {
+      // Arrange
+      final mockViewModel = MockUserProfileViewModel();
+      when(mockViewModel.state).thenReturn(
+        const UserProfileState(status: UiStatus.loading),
+      );
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            userProfileViewModelProvider.overrideWith((ref) => mockViewModel),
+          ],
+          child: const MaterialApp(home: UserProfileScreen()),
+        ),
+      );
+
+      // Assert
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    });
+  });
+}
+```
+
+## Observer Implementation
+
+### State Change Monitoring
+
+```dart
+class AppViewModelObserver extends ViewModelObserver {
+  @override
+  void onStateChange(String viewModelName, UiState oldState, UiState newState) {
+    // Log state changes for debugging
+    print('[$viewModelName] ${oldState.status} -> ${newState.status}');
+
+    // Analytics tracking
+    if (newState.status == UiStatus.error) {
+      _trackError(viewModelName, newState.errorMessage);
+    }
+  }
+
+  @override
+  void onError(String viewModelName, Object error, StackTrace stackTrace) {
+    // Error reporting
+    _reportError(viewModelName, error, stackTrace);
+  }
+
+  @override
+  void onDispose(String viewModelName) {
+    print('[$viewModelName] disposed');
+  }
+
+  void _trackError(String viewModelName, String? errorMessage) {
+    // Send to analytics service
+  }
+
+  void _reportError(String viewModelName, Object error, StackTrace stackTrace) {
+    // Send to crash reporting service
+  }
+}
+
+// Setup in main.dart
+void main() {
+  runApp(
+    ProviderScope(
+      observers: [AppViewModelObserver()],
+      child: MyApp(),
+    ),
+  );
+}
+```
+
+## Dependencies
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.6.1
+  logger: ^2.5.0
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
+
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.24.0
+  build_runner: ^2.4.13
+  freezed: ^3.0.6
+  json_serializable: ^6.9.5
+```
+
+## Best Practices
+
+### 1. State Organization
+
+```dart
+// Keep states focused and cohesive
+@freezed
+class FeatureState with _$FeatureState implements UiState {
+  const factory FeatureState({
+    // Core state
+    @Default(UiStatus.initial) UiStatus status,
+    String? errorMessage,
+
+    // Feature-specific data
+    FeatureData? data,
+
+    // UI state
+    @Default(false) bool isEditing,
+    @Default([]) List<ValidationError> validationErrors,
+  }) = _FeatureState;
+}
+```
+
+### 2. Error Handling
+
+```dart
+class RobustViewModel extends ViewModel<RobustState> {
+  Future<void> performAction() async {
+    try {
+      state = state.loading;
+      final result = await _repository.performAction();
+      state = state.success(result);
+    } on NetworkException catch (e) {
+      state = state.error('Network error: Please check your connection');
+    } on ValidationException catch (e) {
+      state = state.error('Validation error: ${e.message}');
+    } catch (e) {
+      state = state.error('An unexpected error occurred');
+      // Report to crash analytics
+      _reportError(e);
+    }
+  }
+}
+```
+
+### 3. Performance Optimization
+
+```dart
+// Use const constructors for states
+@freezed
+class OptimizedState with _$OptimizedState implements UiState {
+  const factory OptimizedState({
+    @Default(UiStatus.initial) UiStatus status,
+    // ... other fields
+  }) = _OptimizedState;
+
+  const OptimizedState._();
+}
+
+// Implement efficient state updates
+class OptimizedViewModel extends ViewModel<OptimizedState> {
+  void updateField(String value) {
+    // Only update if value actually changed
+    if (state.field != value) {
+      state = state.copyWith(field: value);
+    }
+  }
+}
+```
+
+## Next Steps
+
+- [Learn about Creating Modules](/guides/creating-modules)
+- [Explore State Management Guide](/guides/state-management)
+- [See Post Module Example](/examples/post-module)
+
+---
+
+The ViewModel package provides a robust foundation for state management in modular Flutter applications.

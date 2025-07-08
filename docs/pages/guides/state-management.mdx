@@ -1,0 +1,679 @@
+---
+title: State Management
+description: Comprehensive guide to state management patterns in Modular Flutter
+---
+
+# State Management
+
+State management is a crucial aspect of any Flutter application. This guide covers the state management patterns used in Modular Flutter, built on top of Riverpod and the ViewModel pattern.
+
+## Overview
+
+Modular Flutter uses a layered approach to state management:
+
+- **ViewModels**: Business logic and state management
+- **Riverpod**: Reactive state management and dependency injection
+- **Freezed**: Immutable state classes
+- **UI States**: Structured state representation
+
+## State Architecture
+
+```
+┌─────────────────┐
+│     Widget      │ ← Consumes state
+├─────────────────┤
+│    Provider     │ ← Provides state
+├─────────────────┤
+│   ViewModel     │ ← Manages state
+├─────────────────┤
+│   Repository    │ ← Data access
+├─────────────────┤
+│    Service      │ ← External APIs
+└─────────────────┘
+```
+
+## Core Concepts
+
+### 1. UI State Interface
+
+All states must implement the `UiState` interface:
+
+```dart
+abstract class UiState {
+  UiStatus get status;
+  String? get errorMessage;
+}
+
+enum UiStatus {
+  initial,
+  loading,
+  success,
+  error,
+}
+```
+
+### 2. ViewModel Pattern
+
+ViewModels extend `StateNotifier` and manage business logic:
+
+```dart
+abstract class ViewModel<State extends UiState> extends StateNotifier<State> {
+  ViewModel(super.initialState);
+
+  Future<void> onInit() async {}
+}
+```
+
+### 3. Freezed State Classes
+
+Use freezed for immutable state classes:
+
+```dart
+@freezed
+class ExampleState with _$ExampleState implements UiState {
+  const factory ExampleState({
+    @Default(UiStatus.initial) UiStatus status,
+    String? errorMessage,
+    // ... other properties
+  }) = _ExampleState;
+}
+```
+
+## Implementation Patterns
+
+### Basic State Management
+
+```dart
+// 1. Define the state
+@freezed
+class CounterState with _$CounterState implements UiState {
+  const factory CounterState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default(0) int count,
+    String? errorMessage,
+  }) = _CounterState;
+}
+
+// 2. Create the ViewModel
+class CounterViewModel extends ViewModel<CounterState> {
+  CounterViewModel() : super(const CounterState());
+
+  void increment() {
+    state = state.copyWith(count: state.count + 1);
+  }
+
+  void decrement() {
+    state = state.copyWith(count: state.count - 1);
+  }
+}
+
+// 3. Create the provider
+final counterProvider =
+    StateNotifierProvider<CounterViewModel, CounterState>((ref) {
+  return CounterViewModel();
+});
+
+// 4. Use in widgets
+class CounterWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(counterProvider);
+    final viewModel = ref.read(counterProvider.notifier);
+
+    return Column(
+      children: [
+        Text('Count: ${state.count}'),
+        ElevatedButton(
+          onPressed: viewModel.increment,
+          child: const Text('Increment'),
+        ),
+      ],
+    );
+  }
+}
+```
+
+### Async State Management
+
+```dart
+@freezed
+class UserState with _$UserState implements UiState {
+  const factory UserState({
+    @Default(UiStatus.initial) UiStatus status,
+    User? user,
+    String? errorMessage,
+  }) = _UserState;
+}
+
+class UserViewModel extends ViewModel<UserState> {
+  final UserRepository _repository;
+
+  UserViewModel(this._repository) : super(const UserState());
+
+  Future<void> loadUser(String userId) async {
+    try {
+      state = state.copyWith(status: UiStatus.loading);
+      final user = await _repository.getUser(userId);
+      state = state.copyWith(
+        status: UiStatus.success,
+        user: user,
+        errorMessage: null,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: UiStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+}
+```
+
+### Complex State Management
+
+```dart
+@freezed
+class ShoppingCartState with _$ShoppingCartState implements UiState {
+  const factory ShoppingCartState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default([]) List<CartItem> items,
+    @Default(0.0) double total,
+    @Default(0.0) double discount,
+    @Default(0.0) double tax,
+    String? errorMessage,
+  }) = _ShoppingCartState;
+
+  const ShoppingCartState._();
+
+  // Computed properties
+  double get subtotal => items.fold(0.0, (sum, item) => sum + item.totalPrice);
+  double get discountAmount => subtotal * (discount / 100);
+  double get taxAmount => (subtotal - discountAmount) * (tax / 100);
+  double get grandTotal => subtotal - discountAmount + taxAmount;
+  int get itemCount => items.fold(0, (sum, item) => sum + item.quantity);
+
+  // State transition helpers
+  ShoppingCartState addItem(CartItem item) {
+    final existingIndex = items.indexWhere((i) => i.productId == item.productId);
+
+    if (existingIndex >= 0) {
+      final updatedItems = [...items];
+      updatedItems[existingIndex] = updatedItems[existingIndex].copyWith(
+        quantity: updatedItems[existingIndex].quantity + item.quantity,
+      );
+      return copyWith(items: updatedItems);
+    }
+
+    return copyWith(items: [...items, item]);
+  }
+
+  ShoppingCartState removeItem(String productId) {
+    return copyWith(
+      items: items.where((item) => item.productId != productId).toList(),
+    );
+  }
+
+  ShoppingCartState updateQuantity(String productId, int quantity) {
+    if (quantity <= 0) return removeItem(productId);
+
+    final updatedItems = items.map((item) {
+      if (item.productId == productId) {
+        return item.copyWith(quantity: quantity);
+      }
+      return item;
+    }).toList();
+
+    return copyWith(items: updatedItems);
+  }
+}
+```
+
+## Provider Patterns
+
+### Single Provider
+
+```dart
+final userProvider = StateNotifierProvider<UserViewModel, UserState>((ref) {
+  final repository = GetIt.instance<UserRepository>();
+  return UserViewModel(repository);
+});
+```
+
+### Provider with Parameters
+
+```dart
+final userProvider = StateNotifierProvider.family<UserViewModel, UserState, String>(
+  (ref, userId) {
+    final repository = GetIt.instance<UserRepository>();
+    final viewModel = UserViewModel(repository);
+    viewModel.loadUser(userId);
+    return viewModel;
+  },
+);
+```
+
+### Computed Providers
+
+```dart
+// Derived state
+final userNameProvider = Provider<String>((ref) {
+  final userState = ref.watch(userProvider);
+  return userState.user?.name ?? 'Unknown';
+});
+
+// Filtered lists
+final completedTasksProvider = Provider<List<Task>>((ref) {
+  final tasksState = ref.watch(tasksProvider);
+  return tasksState.tasks.where((task) => task.isCompleted).toList();
+});
+```
+
+### Provider Dependencies
+
+```dart
+final authProvider = StateNotifierProvider<AuthViewModel, AuthState>((ref) {
+  return AuthViewModel(GetIt.instance<AuthRepository>());
+});
+
+final profileProvider = StateNotifierProvider<ProfileViewModel, ProfileState>((ref) {
+  final authState = ref.watch(authProvider);
+  if (authState.user == null) {
+    throw Exception('User not authenticated');
+  }
+  return ProfileViewModel(GetIt.instance<ProfileRepository>(), authState.user!);
+});
+```
+
+## Advanced Patterns
+
+### State Machines
+
+```dart
+enum OrderStatus {
+  pending,
+  processing,
+  shipped,
+  delivered,
+  cancelled,
+}
+
+@freezed
+class OrderState with _$OrderState implements UiState {
+  const factory OrderState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default(OrderStatus.pending) OrderStatus orderStatus,
+    Order? order,
+    String? errorMessage,
+  }) = _OrderState;
+
+  const OrderState._();
+
+  // State transition validation
+  bool canTransitionTo(OrderStatus newStatus) {
+    return switch ((orderStatus, newStatus)) {
+      (OrderStatus.pending, OrderStatus.processing) => true,
+      (OrderStatus.pending, OrderStatus.cancelled) => true,
+      (OrderStatus.processing, OrderStatus.shipped) => true,
+      (OrderStatus.processing, OrderStatus.cancelled) => true,
+      (OrderStatus.shipped, OrderStatus.delivered) => true,
+      _ => false,
+    };
+  }
+}
+```
+
+### Optimistic Updates
+
+```dart
+class TodoViewModel extends ViewModel<TodoState> {
+  final TodoRepository _repository;
+
+  TodoViewModel(this._repository) : super(const TodoState());
+
+  Future<void> toggleTodo(Todo todo) async {
+    // Optimistic update
+    final optimisticTodo = todo.copyWith(isCompleted: !todo.isCompleted);
+    final optimisticTodos = state.todos.map((t) =>
+      t.id == todo.id ? optimisticTodo : t
+    ).toList();
+
+    state = state.copyWith(todos: optimisticTodos);
+
+    try {
+      // Sync with server
+      await _repository.updateTodo(optimisticTodo);
+    } catch (e) {
+      // Revert on error
+      final revertedTodos = state.todos.map((t) =>
+        t.id == todo.id ? todo : t
+      ).toList();
+
+      state = state.copyWith(
+        todos: revertedTodos,
+        errorMessage: 'Failed to update todo',
+      );
+    }
+  }
+}
+```
+
+### Pagination
+
+```dart
+@freezed
+class PaginatedState<T> with _$PaginatedState<T> implements UiState {
+  const factory PaginatedState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default([]) List<T> items,
+    @Default(1) int currentPage,
+    @Default(true) bool hasMore,
+    @Default(false) bool isLoadingMore,
+    String? errorMessage,
+  }) = _PaginatedState<T>;
+}
+
+class PaginatedViewModel<T> extends ViewModel<PaginatedState<T>> {
+  final Future<List<T>> Function(int page) _loadData;
+  final int _pageSize;
+
+  PaginatedViewModel(this._loadData, {int pageSize = 20})
+      : _pageSize = pageSize,
+        super(const PaginatedState<T>());
+
+  Future<void> loadFirstPage() async {
+    try {
+      state = state.copyWith(status: UiStatus.loading);
+      final items = await _loadData(1);
+      state = state.copyWith(
+        status: UiStatus.success,
+        items: items,
+        currentPage: 1,
+        hasMore: items.length == _pageSize,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: UiStatus.error,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+
+  Future<void> loadNextPage() async {
+    if (!state.hasMore || state.isLoadingMore) return;
+
+    try {
+      state = state.copyWith(isLoadingMore: true);
+      final nextPage = state.currentPage + 1;
+      final newItems = await _loadData(nextPage);
+
+      state = state.copyWith(
+        items: [...state.items, ...newItems],
+        currentPage: nextPage,
+        hasMore: newItems.length == _pageSize,
+        isLoadingMore: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoadingMore: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+}
+```
+
+## Testing State Management
+
+### Unit Testing ViewModels
+
+```dart
+void main() {
+  group('CounterViewModel', () {
+    late CounterViewModel viewModel;
+
+    setUp(() {
+      viewModel = CounterViewModel();
+    });
+
+    test('initial state should be 0', () {
+      expect(viewModel.state.count, equals(0));
+      expect(viewModel.state.status, equals(UiStatus.initial));
+    });
+
+    test('increment should increase count', () {
+      viewModel.increment();
+      expect(viewModel.state.count, equals(1));
+    });
+
+    test('decrement should decrease count', () {
+      viewModel.increment();
+      viewModel.decrement();
+      expect(viewModel.state.count, equals(0));
+    });
+  });
+}
+```
+
+### Testing Async ViewModels
+
+```dart
+void main() {
+  group('UserViewModel', () {
+    late MockUserRepository mockRepository;
+    late UserViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockUserRepository();
+      viewModel = UserViewModel(mockRepository);
+    });
+
+    test('should load user successfully', () async {
+      final user = User(id: '1', name: 'John');
+      when(mockRepository.getUser('1')).thenAnswer((_) async => user);
+
+      await viewModel.loadUser('1');
+
+      expect(viewModel.state.status, equals(UiStatus.success));
+      expect(viewModel.state.user, equals(user));
+    });
+
+    test('should handle errors', () async {
+      when(mockRepository.getUser('1')).thenThrow(Exception('Network error'));
+
+      await viewModel.loadUser('1');
+
+      expect(viewModel.state.status, equals(UiStatus.error));
+      expect(viewModel.state.errorMessage, contains('Network error'));
+    });
+  });
+}
+```
+
+### Widget Testing with State
+
+```dart
+void main() {
+  group('CounterWidget', () {
+    testWidgets('should display count', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: CounterWidget(),
+          ),
+        ),
+      );
+
+      expect(find.text('Count: 0'), findsOneWidget);
+    });
+
+    testWidgets('should increment count when button pressed', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(
+            home: CounterWidget(),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Increment'));
+      await tester.pump();
+
+      expect(find.text('Count: 1'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Best Practices
+
+### 1. State Design
+
+```dart
+// Good: Focused state with clear responsibilities
+@freezed
+class LoginState with _$LoginState implements UiState {
+  const factory LoginState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default('') String email,
+    @Default('') String password,
+    @Default(false) bool isPasswordVisible,
+    String? emailError,
+    String? passwordError,
+    String? errorMessage,
+  }) = _LoginState;
+}
+
+// Bad: Overly complex state
+class BadState {
+  final UiStatus status;
+  final String email;
+  final String password;
+  final List<User> users;
+  final Map<String, dynamic> preferences;
+  final bool isLoading;
+  final String? error;
+  // ... too many responsibilities
+}
+```
+
+### 2. Error Handling
+
+```dart
+class RobustViewModel extends ViewModel<RobustState> {
+  Future<void> performAction() async {
+    try {
+      state = state.copyWith(status: UiStatus.loading);
+      final result = await _repository.performAction();
+      state = state.copyWith(
+        status: UiStatus.success,
+        data: result,
+        errorMessage: null,
+      );
+    } on NetworkException catch (e) {
+      state = state.copyWith(
+        status: UiStatus.error,
+        errorMessage: 'Network error: ${e.message}',
+      );
+    } on ValidationException catch (e) {
+      state = state.copyWith(
+        status: UiStatus.error,
+        errorMessage: 'Validation error: ${e.message}',
+      );
+    } catch (e) {
+      state = state.copyWith(
+        status: UiStatus.error,
+        errorMessage: 'An unexpected error occurred',
+      );
+    }
+  }
+}
+```
+
+### 3. Performance Optimization
+
+```dart
+// Use const constructors
+@freezed
+class OptimizedState with _$OptimizedState implements UiState {
+  const factory OptimizedState({
+    @Default(UiStatus.initial) UiStatus status,
+    // ... other fields
+  }) = _OptimizedState;
+}
+
+// Avoid unnecessary rebuilds
+class OptimizedViewModel extends ViewModel<OptimizedState> {
+  void updateField(String value) {
+    if (state.field != value) {
+      state = state.copyWith(field: value);
+    }
+  }
+}
+
+// Use select for specific state slices
+class OptimizedWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final count = ref.watch(counterProvider.select((state) => state.count));
+    return Text('Count: $count');
+  }
+}
+```
+
+## Common Pitfalls
+
+### 1. State Mutations
+
+```dart
+// Bad: Mutating state directly
+class BadViewModel extends ViewModel<BadState> {
+  void addItem(Item item) {
+    state.items.add(item); // Don't mutate directly!
+  }
+}
+
+// Good: Creating new state
+class GoodViewModel extends ViewModel<GoodState> {
+  void addItem(Item item) {
+    state = state.copyWith(items: [...state.items, item]);
+  }
+}
+```
+
+### 2. Heavy Computations in Build
+
+```dart
+// Bad: Computing in build method
+class BadWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(provider);
+    final expensiveResult = heavyComputation(state.data); // Don't do this!
+    return Text(expensiveResult);
+  }
+}
+
+// Good: Using computed providers
+final expensiveProvider = Provider<String>((ref) {
+  final state = ref.watch(dataProvider);
+  return heavyComputation(state.data);
+});
+
+class GoodWidget extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final result = ref.watch(expensiveProvider);
+    return Text(result);
+  }
+}
+```
+
+## Next Steps
+
+- [Learn about Dependency Injection](/guides/dependency-injection)
+- [Understand Routing](/guides/routing)
+- [Explore Testing Strategies](/guides/testing)
+
+---
+
+Effective state management is crucial for building maintainable and scalable Flutter applications. The patterns shown here provide a solid foundation for managing state in modular applications.

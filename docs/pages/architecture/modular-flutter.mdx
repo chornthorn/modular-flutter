@@ -1,0 +1,573 @@
+---
+title: Modular Flutter Package
+description: Flutter-specific implementations for modular architecture
+---
+
+The `modular_flutter` package provides Flutter-specific implementations and widgets for the modular architecture. It bridges the gap between the core modular system and Flutter's widget framework.
+
+## Overview
+
+Modular Flutter includes:
+
+- **ModularApp Widget**: Main application widget with module integration
+- **Module Management**: Registration and initialization helpers
+- **Router Integration**: Seamless GoRouter integration
+- **Flutter Extensions**: Flutter-specific utilities and extensions
+
+## Key Components
+
+### 1. ModularApp Widget
+
+The `ModularApp` widget is the root widget that initializes and manages modules:
+
+```dart
+class ModularApp extends StatefulWidget {
+  final List<Module> modules;
+  final Widget child;
+  final VoidCallback? onModulesInitialized;
+
+  const ModularApp({
+    super.key,
+    required this.modules,
+    required this.child,
+    this.onModulesInitialized,
+  });
+
+  @override
+  State<ModularApp> createState() => _ModularAppState();
+}
+```
+
+**Features:**
+
+- Automatic module registration
+- Dependency injection setup
+- Router configuration
+- Lifecycle management
+
+### 2. Modular Class
+
+Static class providing Flutter-specific module utilities:
+
+```dart
+class Modular {
+  static GoRouter? _router;
+  static final List<Module> _modules = [];
+
+  // Module registration
+  static Future<void> register(
+    Future<void> Function(GetIt locator) registerDependencies,
+  );
+
+  // Router configuration
+  static GoRouter get routerConfig;
+
+  // Module management
+  static void addModules(List<Module> modules);
+  static T getModule<T extends Module>();
+  static bool isModuleRegistered<T extends Module>();
+
+  // Navigation helpers
+  static void go(String location);
+  static void push(String location);
+  static void pop();
+}
+```
+
+### 3. Module Extensions
+
+Flutter-specific extensions for modules:
+
+```dart
+extension ModuleExtensions on Module {
+  // Widget building helpers
+  Widget buildScreen(String routeName, Map<String, String> params);
+
+  // Navigation helpers
+  void navigateTo(String route);
+  void navigateBack();
+
+  // Dependency access
+  T getDependency<T extends Object>();
+}
+```
+
+## Usage Examples
+
+### Setting Up ModularApp
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Register global dependencies
+  await Modular.register((locator) async {
+    // Register app configuration
+    final config = ProductionAppConfig();
+    await config.loadEnvVariables('.env');
+    locator.registerLazySingleton<AppConfig>(() => config);
+
+    // Register global services
+    locator.registerLazySingleton<HttpClient>(
+      () => HttpClient(baseUrl: config.apiBaseUrl),
+    );
+  });
+
+  runApp(MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      child: ModularApp(
+        modules: [
+          AppModule(),
+          AuthModule(),
+          UserModule(),
+          PostModule(),
+        ],
+        child: const MyAppContent(),
+      ),
+    );
+  }
+}
+
+class MyAppContent extends StatelessWidget {
+  const MyAppContent({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp.router(
+      title: 'Modular Flutter App',
+      routerConfig: Modular.routerConfig,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        useMaterial3: true,
+      ),
+    );
+  }
+}
+```
+
+### Creating Flutter-Specific Modules
+
+```dart
+class PostModule extends Module<PostRouter> {
+  @override
+  PostRouter createRouter() => PostRouter();
+
+  @override
+  String get moduleName => 'post';
+
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Register services
+    locator.registerLazySingleton<PostService>(
+      () => PostService(
+        httpClient: locator.get<HttpClient>(),
+        baseUrl: appConfig.apiBaseUrl,
+      ),
+    );
+
+    // Register repositories
+    locator.registerLazySingleton<PostRepository>(
+      () => PostRepositoryImpl(locator.get<PostService>()),
+    );
+
+    // Register ViewModels (Flutter-specific)
+    locator.registerFactory<PostsListViewModel>(
+      () => PostsListViewModel(locator.get<PostRepository>()),
+    );
+
+    locator.registerFactoryParam<PostDetailsViewModel, String, void>(
+      (postId, _) => PostDetailsViewModel(
+        locator.get<PostRepository>(),
+        postId,
+      ),
+    );
+  }
+}
+```
+
+### Router Implementation
+
+```dart
+class PostRouter extends ModuleRouter {
+  @override
+  String get basePath => '/posts';
+
+  @override
+  List<RouteBase> get routes => [
+    GoRoute(
+      path: basePath,
+      name: 'post-list',
+      builder: (context, state) => const PostsListScreen(),
+      routes: [
+        GoRoute(
+          path: '/:postId',
+          name: 'post-details',
+          builder: (context, state) {
+            final postId = state.pathParameters['postId']!;
+            return PostDetailsScreen(postId: postId);
+          },
+          routes: [
+            GoRoute(
+              path: '/edit',
+              name: 'post-edit',
+              builder: (context, state) {
+                final postId = state.pathParameters['postId']!;
+                return PostEditScreen(postId: postId);
+              },
+            ),
+          ],
+        ),
+      ],
+    ),
+  ];
+}
+```
+
+## Widget Integration
+
+### Using Modules in Widgets
+
+```dart
+class PostsListScreen extends ConsumerWidget {
+  const PostsListScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Access module dependencies
+    final viewModel = GetIt.instance<PostsListViewModel>();
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Posts'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: () => context.go('/posts/create'),
+          ),
+        ],
+      ),
+      body: PostsListView(viewModel: viewModel),
+    );
+  }
+}
+```
+
+### Modular Widgets
+
+Create reusable widgets that work across modules:
+
+```dart
+class ModularListView<T> extends StatelessWidget {
+  final List<T> items;
+  final Widget Function(T item) itemBuilder;
+  final VoidCallback? onRefresh;
+  final String? emptyMessage;
+
+  const ModularListView({
+    super.key,
+    required this.items,
+    required this.itemBuilder,
+    this.onRefresh,
+    this.emptyMessage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(emptyMessage ?? 'No items found'),
+            if (onRefresh != null) ...[
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: onRefresh,
+                child: const Text('Refresh'),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
+    Widget listView = ListView.builder(
+      itemCount: items.length,
+      itemBuilder: (context, index) => itemBuilder(items[index]),
+    );
+
+    if (onRefresh != null) {
+      listView = RefreshIndicator(
+        onRefresh: () async => onRefresh!(),
+        child: listView,
+      );
+    }
+
+    return listView;
+  }
+}
+```
+
+## Navigation Helpers
+
+### Module-Aware Navigation
+
+```dart
+extension NavigationExtensions on BuildContext {
+  // Navigate within current module
+  void goToModuleRoute(String route) {
+    final currentModule = _getCurrentModule();
+    final fullRoute = '${currentModule.router.basePath}$route';
+    go(fullRoute);
+  }
+
+  // Navigate to another module
+  void goToModule<T extends Module>(String route) {
+    final module = GetIt.instance<T>();
+    final fullRoute = '${module.router.basePath}$route';
+    go(fullRoute);
+  }
+}
+
+// Usage
+class PostListItem extends StatelessWidget {
+  final Post post;
+
+  const PostListItem({super.key, required this.post});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      title: Text(post.title),
+      subtitle: Text(post.excerpt),
+      onTap: () => context.goToModuleRoute('/${post.id}'),
+    );
+  }
+}
+```
+
+## Testing
+
+### Testing Modular Widgets
+
+```dart
+void main() {
+  group('ModularApp', () {
+    late List<Module> testModules;
+
+    setUp(() {
+      testModules = [
+        TestModule(),
+        AnotherTestModule(),
+      ];
+    });
+
+    testWidgets('should initialize modules correctly', (tester) async {
+      bool onInitializedCalled = false;
+
+      await tester.pumpWidget(
+        ModularApp(
+          modules: testModules,
+          onModulesInitialized: () => onInitializedCalled = true,
+          child: const MaterialApp(
+            home: Scaffold(body: Text('Test')),
+          ),
+        ),
+      );
+
+      await tester.pumpAndSettle();
+
+      expect(onInitializedCalled, isTrue);
+      expect(Modular.isModuleRegistered<TestModule>(), isTrue);
+    });
+  });
+}
+```
+
+### Module Integration Tests
+
+```dart
+void main() {
+  group('PostModule Integration', () {
+    setUp(() async {
+      // Setup test environment
+      GetIt.instance.reset();
+
+      await Modular.register((locator) async {
+        locator.registerLazySingleton<AppConfig>(() => TestAppConfig());
+        locator.registerLazySingleton<HttpClient>(() => MockHttpClient());
+      });
+    });
+
+    testWidgets('should navigate to post details', (tester) async {
+      await tester.pumpWidget(
+        ModularApp(
+          modules: [PostModule()],
+          child: MaterialApp.router(
+            routerConfig: Modular.routerConfig,
+          ),
+        ),
+      );
+
+      // Navigate to posts list
+      await tester.pumpAndSettle();
+
+      // Tap on a post item
+      await tester.tap(find.text('Test Post'));
+      await tester.pumpAndSettle();
+
+      // Verify navigation to details
+      expect(find.text('Post Details'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Performance Considerations
+
+### Lazy Loading Modules
+
+```dart
+class LazyModule extends Module<LazyRouter> {
+  static bool _isInitialized = false;
+
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    if (_isInitialized) return;
+
+    // Register heavy dependencies only when needed
+    locator.registerLazySingleton<HeavyService>(
+      () => HeavyService(),
+    );
+
+    _isInitialized = true;
+  }
+}
+```
+
+### Memory Management
+
+```dart
+class MemoryEfficientModule extends Module<MemoryEfficientRouter> {
+  @override
+  void registerDependencies(GetIt locator, AppConfig appConfig) {
+    // Use factory registration for stateful objects
+    locator.registerFactory<ViewModelWithState>(
+      () => ViewModelWithState(),
+    );
+
+    // Use singleton for stateless services
+    locator.registerLazySingleton<StatelessService>(
+      () => StatelessService(),
+    );
+  }
+}
+```
+
+## Dependencies
+
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  modular_core:
+    path: ../modular_core
+  go_router: ^16.0.0
+  get_it: ^8.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  mockito: ^5.4.0
+  build_runner: ^2.4.7
+```
+
+## Best Practices
+
+### 1. Module Initialization Order
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize in dependency order
+  await Modular.register((locator) async {
+    // 1. Core services
+    locator.registerLazySingleton<AppConfig>(() => AppConfig());
+
+    // 2. Network layer
+    locator.registerLazySingleton<HttpClient>(() => HttpClient());
+
+    // 3. Storage layer
+    locator.registerLazySingleton<StorageService>(() => StorageService());
+  });
+
+  runApp(ModularApp(
+    modules: [
+      CoreModule(),      // Core functionality
+      AuthModule(),      // Authentication (depends on core)
+      UserModule(),      // User management (depends on auth)
+      FeatureModule(),   // Feature modules (depend on user)
+    ],
+    child: MyApp(),
+  ));
+}
+```
+
+### 2. Widget Organization
+
+```dart
+// Organize widgets by module
+lib/
+├── modules/
+│   ├── auth/
+│   │   ├── widgets/
+│   │   │   ├── login_form.dart
+│   │   │   └── auth_button.dart
+│   │   └── screens/
+│   │       └── login_screen.dart
+│   └── user/
+│       ├── widgets/
+│       └── screens/
+```
+
+### 3. State Management Integration
+
+```dart
+class ModularProvider extends ConsumerWidget {
+  final Widget child;
+
+  const ModularProvider({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return MultiProvider(
+      providers: [
+        // Global providers
+        Provider<AppConfig>(
+          create: (_) => GetIt.instance<AppConfig>(),
+        ),
+        // Module-specific providers
+        ...PostModule().createProviders(),
+        ...AuthModule().createProviders(),
+      ],
+      child: child,
+    );
+  }
+}
+```
+
+## Next Steps
+
+- [Explore ViewModel Package](/architecture/viewmodel)
+- [Learn about Creating Modules](/guides/creating-modules)
+- [Understanding Dependency Injection](/guides/dependency-injection)
+
+---
+
+The modular_flutter package makes it easy to build scalable Flutter applications with clean separation of concerns.

@@ -1,0 +1,593 @@
+---
+title: Post Module Example
+description: Complete implementation walkthrough of the Post Module
+---
+
+The Post Module is a complete implementation that demonstrates all aspects of the modular architecture. It showcases CRUD operations, state management, error handling, and navigation patterns.
+
+## Module Overview
+
+The Post Module includes:
+
+- **Posts List Screen**: Display all posts with pull-to-refresh
+- **Post Details Screen**: Show individual post details
+- **CRUD Operations**: Create, Read, Update, Delete posts
+- **State Management**: ViewModel pattern with Riverpod
+- **Error Handling**: Result types and user-friendly error messages
+- **Navigation**: Deep linking with GoRouter
+
+## File Structure
+
+```
+post_module/
+├── models/
+│   └── post_model.dart           # Post data model
+├── providers/
+│   └── post_providers.dart       # Riverpod providers
+├── repositories/
+│   ├── post_repository.dart      # Repository interface
+│   └── post_repository_impl.dart # Repository implementation
+├── screens/
+│   ├── post_details_screen.dart  # Post details UI
+│   └── posts_list_screen.dart    # Posts list UI
+├── services/
+│   └── post_service.dart         # API service
+├── states/
+│   ├── post_details_state.dart   # Post details state
+│   └── posts_list_state.dart     # Posts list state
+├── viewmodels/
+│   ├── post_details_viewmodel.dart # Post details business logic
+│   └── posts_list_viewmodel.dart   # Posts list business logic
+├── post_module.dart              # Module definition
+└── post_router.dart              # Module routing
+```
+
+## 1. Module Definition
+
+The `PostModule` registers dependencies and provides routing:
+
+```dart
+class PostModule extends Module<PostRouter> {
+  @override
+  PostRouter createRouter() => PostRouter();
+
+  @override
+  String get moduleName => 'post';
+
+  @override
+  void registerDependencies(ServiceLocator locator, AppConfig appConfig) {
+    // Register the post service as a singleton
+    locator.registerLazySingleton<PostService>(() => PostService());
+
+    // Register the post repository as a singleton
+    locator.registerLazySingleton<PostRepository>(
+      () => PostRepositoryImpl(locator.get<PostService>()),
+    );
+  }
+}
+```
+
+## 2. Routing Configuration
+
+The `PostRouter` defines the module's routes:
+
+```dart
+class PostRouter extends ModuleRouter {
+  @override
+  String get basePath => '/posts';
+
+  @override
+  List<RouteBase> get routes => [
+    // List all posts
+    GoRoute(
+      path: basePath,
+      name: 'post-list',
+      builder: (context, state) => const PostsListScreen(),
+    ),
+
+    // View post details
+    GoRoute(
+      path: '$basePath/:postId',
+      name: 'post-details',
+      builder: (context, state) {
+        final postId = state.pathParameters['postId']!;
+        return PostDetailsScreen(postId: postId);
+      },
+    ),
+  ];
+}
+```
+
+## 3. Data Model
+
+The `Post` model using Freezed for immutability:
+
+```dart
+@freezed
+class Post with _$Post {
+  const factory Post({
+    required int id,
+    required String title,
+    required String body,
+    required int userId,
+  }) = _Post;
+
+  factory Post.fromJson(Map<String, dynamic> json) => _$PostFromJson(json);
+}
+```
+
+## 4. Service Layer
+
+The `PostService` handles API communication:
+
+```dart
+class PostService {
+  final String _baseUrl = 'https://jsonplaceholder.typicode.com';
+  final http.Client _client = http.Client();
+
+  Future<List<Post>> getPosts() async {
+    final response = await _client.get(Uri.parse('$_baseUrl/posts'));
+
+    if (response.statusCode == 200) {
+      final List<dynamic> jsonList = json.decode(response.body);
+      return jsonList.map((json) => Post.fromJson(json)).toList();
+    } else {
+      throw Exception('Failed to load posts');
+    }
+  }
+
+  Future<Post> getPost(int id) async {
+    final response = await _client.get(Uri.parse('$_baseUrl/posts/$id'));
+
+    if (response.statusCode == 200) {
+      return Post.fromJson(json.decode(response.body));
+    } else {
+      throw Exception('Failed to load post');
+    }
+  }
+
+  Future<void> deletePost(int id) async {
+    final response = await _client.delete(Uri.parse('$_baseUrl/posts/$id'));
+
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete post');
+    }
+  }
+}
+```
+
+## 5. Repository Pattern
+
+The repository abstracts data access:
+
+```dart
+abstract class PostRepository {
+  Future<List<Post>> fetchPosts();
+  Future<Post> getPost(int id);
+  Future<void> deletePost(int id);
+}
+
+class PostRepositoryImpl implements PostRepository {
+  final PostService _postService;
+
+  PostRepositoryImpl(this._postService);
+
+  @override
+  Future<List<Post>> fetchPosts() async {
+    return await _postService.getPosts();
+  }
+
+  @override
+  Future<Post> getPost(int id) async {
+    return await _postService.getPost(id);
+  }
+
+  @override
+  Future<void> deletePost(int id) async {
+    await _postService.deletePost(id);
+  }
+}
+```
+
+## 6. State Management
+
+### Posts List State
+
+```dart
+@freezed
+class PostsListState with _$PostsListState implements UiState {
+  const factory PostsListState({
+    @Default(UiStatus.initial) UiStatus status,
+    @Default([]) List<Post> posts,
+    String? errorMessage,
+  }) = _PostsListState;
+
+  const PostsListState._();
+
+  // Helper methods for state transitions
+  PostsListState get loading => copyWith(status: UiStatus.loading);
+
+  PostsListState withPosts(List<Post> posts) => copyWith(
+    status: UiStatus.success,
+    posts: posts,
+    errorMessage: null,
+  );
+
+  PostsListState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+```
+
+### Post Details State
+
+```dart
+@freezed
+class PostDetailsState with _$PostDetailsState implements UiState {
+  const factory PostDetailsState({
+    @Default(UiStatus.initial) UiStatus status,
+    Post? post,
+    String? errorMessage,
+  }) = _PostDetailsState;
+
+  const PostDetailsState._();
+
+  PostDetailsState get loading => copyWith(status: UiStatus.loading);
+
+  PostDetailsState withPost(Post post) => copyWith(
+    status: UiStatus.success,
+    post: post,
+    errorMessage: null,
+  );
+
+  PostDetailsState error(String message) => copyWith(
+    status: UiStatus.error,
+    errorMessage: message,
+  );
+}
+```
+
+## 7. ViewModels
+
+### Posts List ViewModel
+
+```dart
+class PostsListViewModel extends ViewModel<PostsListState> {
+  final PostRepository _postRepository;
+
+  PostsListViewModel(this._postRepository) : super(const PostsListState());
+
+  @override
+  Future<void> onInit() async {
+    await loadPosts();
+  }
+
+  /// Load all posts from the repository
+  Future<void> loadPosts() async {
+    try {
+      state = state.loading;
+      final posts = await _postRepository.fetchPosts();
+      state = state.withPosts(posts);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  /// Refresh the posts list
+  Future<void> refreshPosts() async {
+    await loadPosts();
+  }
+
+  /// Delete a post and refresh the list
+  Future<bool> deletePost(int postId) async {
+    try {
+      await _postRepository.deletePost(postId);
+      // Refresh the list after deletion
+      await loadPosts();
+      return true;
+    } catch (e) {
+      state = state.error('Failed to delete post: ${e.toString()}');
+      return false;
+    }
+  }
+}
+```
+
+### Post Details ViewModel
+
+```dart
+class PostDetailsViewModel extends ViewModel<PostDetailsState> {
+  final PostRepository _postRepository;
+  final String postId;
+
+  PostDetailsViewModel(this._postRepository, this.postId)
+      : super(const PostDetailsState());
+
+  @override
+  Future<void> onInit() async {
+    await loadPost();
+  }
+
+  Future<void> loadPost() async {
+    try {
+      state = state.loading;
+      final post = await _postRepository.getPost(int.parse(postId));
+      state = state.withPost(post);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  Future<void> refreshPost() async {
+    await loadPost();
+  }
+}
+```
+
+## 8. Riverpod Providers
+
+```dart
+// Provider for PostsListViewModel
+final postsListViewModelProvider = StateNotifierProvider<PostsListViewModel, PostsListState>((ref) {
+  final repository = GetIt.instance<PostRepository>();
+  return PostsListViewModel(repository);
+});
+
+// Provider for PostDetailsViewModel
+final postDetailsViewModelProvider = StateNotifierProvider.family<PostDetailsViewModel, PostDetailsState, String>((ref, postId) {
+  final repository = GetIt.instance<PostRepository>();
+  return PostDetailsViewModel(repository, postId);
+});
+```
+
+## 9. UI Implementation
+
+### Posts List Screen
+
+```dart
+class PostsListScreen extends ConsumerWidget {
+  const PostsListScreen({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(postsListViewModelProvider);
+    final viewModel = ref.read(postsListViewModelProvider.notifier);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Posts'),
+      ),
+      body: _buildBody(context, state, viewModel),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, PostsListState state, PostsListViewModel viewModel) {
+    switch (state.status) {
+      case UiStatus.initial:
+      case UiStatus.loading:
+        return const Center(child: CircularProgressIndicator());
+
+      case UiStatus.success:
+        return RefreshIndicator(
+          onRefresh: viewModel.refreshPosts,
+          child: ListView.builder(
+            itemCount: state.posts.length,
+            itemBuilder: (context, index) {
+              final post = state.posts[index];
+              return PostListItem(
+                post: post,
+                onTap: () => context.go('/posts/${post.id}'),
+                onDelete: () => viewModel.deletePost(post.id),
+              );
+            },
+          ),
+        );
+
+      case UiStatus.error:
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('Error: ${state.errorMessage}'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: viewModel.loadPosts,
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+}
+```
+
+### Post Details Screen
+
+```dart
+class PostDetailsScreen extends ConsumerWidget {
+  final String postId;
+
+  const PostDetailsScreen({required this.postId, super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(postDetailsViewModelProvider(postId));
+    final viewModel = ref.read(postDetailsViewModelProvider(postId).notifier);
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Post Details'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: viewModel.refreshPost,
+          ),
+        ],
+      ),
+      body: _buildBody(context, state),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, PostDetailsState state) {
+    switch (state.status) {
+      case UiStatus.initial:
+      case UiStatus.loading:
+        return const Center(child: CircularProgressIndicator());
+
+      case UiStatus.success:
+        final post = state.post!;
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                post.title,
+                style: Theme.of(context).textTheme.headlineSmall,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                post.body,
+                style: Theme.of(context).textTheme.bodyLarge,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'User ID: ${post.userId}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        );
+
+      case UiStatus.error:
+        return Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text('Error: ${state.errorMessage}'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => context.go('/posts'),
+                child: const Text('Back to Posts'),
+              ),
+            ],
+          ),
+        );
+    }
+  }
+}
+```
+
+## Key Features Demonstrated
+
+### 1. **Modular Structure**
+
+- Clear separation of concerns
+- Consistent file organization
+- Easy to locate and modify code
+
+### 2. **Dependency Injection**
+
+- Services and repositories are automatically injected
+- Easy to mock for testing
+- Clear dependency relationships
+
+### 3. **State Management**
+
+- Type-safe state with Freezed
+- Reactive UI updates with Riverpod
+- Clear state transitions
+
+### 4. **Error Handling**
+
+- Comprehensive error handling throughout the stack
+- User-friendly error messages
+- Graceful failure recovery
+
+### 5. **Navigation**
+
+- Deep linking support
+- Type-safe route parameters
+- Seamless navigation between screens
+
+## Testing the Module
+
+### Unit Tests
+
+```dart
+void main() {
+  group('PostsListViewModel', () {
+    late MockPostRepository mockRepository;
+    late PostsListViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockPostRepository();
+      viewModel = PostsListViewModel(mockRepository);
+    });
+
+    test('should load posts successfully', () async {
+      // Arrange
+      final posts = [Post(id: 1, title: 'Test', body: 'Body', userId: 1)];
+      when(mockRepository.fetchPosts()).thenAnswer((_) async => posts);
+
+      // Act
+      await viewModel.loadPosts();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.posts, posts);
+    });
+
+    test('should handle errors gracefully', () async {
+      // Arrange
+      when(mockRepository.fetchPosts()).thenThrow(Exception('Network error'));
+
+      // Act
+      await viewModel.loadPosts();
+
+      // Assert
+      expect(viewModel.state.status, UiStatus.error);
+      expect(viewModel.state.errorMessage, contains('Network error'));
+    });
+  });
+}
+```
+
+### Widget Tests
+
+```dart
+void main() {
+  group('PostsListScreen', () {
+    testWidgets('should display posts when loaded', (tester) async {
+      // Arrange
+      final posts = [Post(id: 1, title: 'Test Post', body: 'Test Body', userId: 1)];
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            postsListViewModelProvider.overrideWith((ref) => MockPostsListViewModel(posts)),
+          ],
+          child: const MaterialApp(home: PostsListScreen()),
+        ),
+      );
+
+      // Assert
+      expect(find.text('Test Post'), findsOneWidget);
+    });
+  });
+}
+```
+
+## Next Steps
+
+- [Learn about Creating Modules](/guides/creating-modules)
+- [Explore State Management](/guides/state-management)
+- [Understand Dependency Injection](/guides/dependency-injection)
+- [Set up Testing](/guides/testing)
+
+---
+
+This example demonstrates a complete, production-ready module implementation following all the architectural patterns and best practices.
