@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  FLUTTER_VERSION: "3.24.0"
+
+jobs:
+  # Test all packages
+  test:
+    name: Test Packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Analyze packages
+        run: melos run analyze
+
+      - name: Format check
+        run: melos run format
+
+      - name: Run tests
+        run: melos run test
+
+      - name: Generate code
+        run: melos run generate
+
+  # Dry run publish for publishable packages
+  publish-dry-run:
+    name: Publish Dry Run
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Check publishable packages
+        run: |
+          echo "Checking which packages can be published..."
+          for package in packages/*/; do
+            if [ -f "${package}pubspec.yaml" ]; then
+              if ! grep -q "publish_to.*none" "${package}pubspec.yaml"; then
+                echo "Testing publish for: $package"
+                cd "$package"
+                dart pub publish --dry-run
+                cd ../..
+              else
+                echo "Skipping $package (marked as publish_to: none)"
+              fi
+            fi
+          done

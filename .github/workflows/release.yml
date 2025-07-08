@@ -1,0 +1,290 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., v1.0.0)"
+        required: true
+        type: string
+      create_release:
+        description: "Create GitHub release"
+        required: true
+        type: boolean
+        default: true
+      publish_packages:
+        description: "Publish packages to pub.dev"
+        required: true
+        type: boolean
+        default: false
+
+env:
+  FLUTTER_VERSION: "3.24.0"
+
+jobs:
+  # Validate and test all packages
+  validate:
+    name: Validate and Test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      packages: ${{ steps.packages.outputs.packages }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Get version from tag or input
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=${GITHUB_REF#refs/tags/}
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Version: ${VERSION}"
+
+      - name: Analyze packages
+        run: melos run analyze
+
+      - name: Format check
+        run: melos run format
+
+      - name: Run tests
+        run: melos run test
+
+      - name: Generate code
+        run: melos run generate
+
+      - name: Get publishable packages
+        id: packages
+        run: |
+          PACKAGES=$(find packages -name "pubspec.yaml" -exec grep -L "publish_to.*none" {} \; | sed 's|/pubspec.yaml||g' | jq -R -s -c 'split("\n")[:-1]')
+          echo "packages=${PACKAGES}" >> $GITHUB_OUTPUT
+          echo "Publishable packages: ${PACKAGES}"
+
+  # Build packages
+  build:
+    name: Build Packages
+    runs-on: ubuntu-latest
+    needs: validate
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.validate.outputs.packages) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Build package
+        run: |
+          cd ${{ matrix.package }}
+          dart pub get
+          dart pub publish --dry-run
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.package }}
+          path: ${{ matrix.package }}/
+          retention-days: 1
+
+  # Create GitHub release
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: ${{ github.event.inputs.create_release == 'true' || github.event_name == 'push' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the latest tag before current
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          # Generate changelog
+          CHANGELOG=$(git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+
+          # Save to file for release
+          cat > RELEASE_NOTES.md << EOF
+          ## What's Changed
+
+          ${CHANGELOG}
+
+          ## Package Versions
+
+          EOF
+
+          # Add package versions to release notes
+          for package in $(echo '${{ needs.validate.outputs.packages }}' | jq -r '.[]'); do
+            VERSION=$(grep '^version:' ${package}/pubspec.yaml | cut -d' ' -f2)
+            PACKAGE_NAME=$(grep '^name:' ${package}/pubspec.yaml | cut -d' ' -f2)
+            echo "- **${PACKAGE_NAME}**: ${VERSION}" >> RELEASE_NOTES.md
+          done
+
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat RELEASE_NOTES.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.version }}
+          name: Release ${{ needs.validate.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ contains(needs.validate.outputs.version, '-') }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Publish packages to pub.dev
+  publish:
+    name: Publish to pub.dev
+    runs-on: ubuntu-latest
+    needs: [validate, build, release]
+    if: ${{ github.event.inputs.publish_packages == 'true' && github.event_name == 'workflow_dispatch' }}
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.validate.outputs.packages) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Setup pub credentials
+        run: |
+          mkdir -p ~/.pub-cache
+          cat > ~/.pub-cache/credentials.json << EOF
+          {
+            "accessToken": "${{ secrets.PUB_ACCESS_TOKEN }}",
+            "refreshToken": "${{ secrets.PUB_REFRESH_TOKEN }}",
+            "tokenEndpoint": "https://accounts.google.com/o/oauth2/token",
+            "scopes": ["https://www.googleapis.com/auth/userinfo.email", "openid"],
+            "expiration": 1999999999999
+          }
+          EOF
+
+      - name: Setup Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap workspace
+        run: melos bootstrap
+
+      - name: Publish package
+        run: |
+          cd ${{ matrix.package }}
+          dart pub publish --force
+
+  # Update documentation
+  update-docs:
+    name: Update Documentation
+    runs-on: ubuntu-latest
+    needs: [validate, release]
+    if: ${{ github.event.inputs.create_release == 'true' || github.event_name == 'push' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - name: Update CHANGELOG.md
+        run: |
+          # Create or update CHANGELOG.md
+          if [ ! -f CHANGELOG.md ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to this project will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+
+          # Add new release section
+          VERSION="${{ needs.validate.outputs.version }}"
+          DATE=$(date +%Y-%m-%d)
+
+          # Create temp file with new content
+          echo "# Changelog" > CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          echo "All notable changes to this project will be documented in this file." >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          echo "## [${VERSION}] - ${DATE}" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+
+          # Get changes since last tag
+          PREVIOUS_TAG=$(git tag --sort=-version:refname | head -2 | tail -1)
+          if [ -z "$PREVIOUS_TAG" ]; then
+            PREVIOUS_TAG=$(git rev-list --max-parents=0 HEAD)
+          fi
+
+          git log ${PREVIOUS_TAG}..HEAD --pretty=format:"- %s" --no-merges >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+          echo "" >> CHANGELOG_NEW.md
+
+          # Append existing changelog (skip first 4 lines if file exists)
+          if [ -f CHANGELOG.md ]; then
+            tail -n +5 CHANGELOG.md >> CHANGELOG_NEW.md
+          fi
+
+          mv CHANGELOG_NEW.md CHANGELOG.md
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add CHANGELOG.md
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update CHANGELOG for ${{ needs.validate.outputs.version }}"
+            git push origin main
+          fi
