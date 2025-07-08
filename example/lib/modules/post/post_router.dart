@@ -1,7 +1,7 @@
 import 'package:modular_flutter/modular_flutter.dart';
 
-import 'screens/post_details_screen.dart';
-import 'screens/posts_list_screen.dart';
+import 'pages/post_details_screen.dart';
+import 'pages/posts_list_screen.dart';
 
 class PostRouter extends ModuleRouter {
   @override

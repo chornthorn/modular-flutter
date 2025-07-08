@@ -29,14 +29,9 @@ Comprehensive error handling using Result types and type-safe state management.
 ┌─────────────────────────────────────────────────────────────────┐
 │                     Flutter Application                         │
 ├─────────────────────────────────────────────────────────────────┤
-│                        UI Layer                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │   Screens   │  │   Widgets   │  │  Providers  │              │
-│  └─────────────┘  └─────────────┘  └─────────────┘              │
-├─────────────────────────────────────────────────────────────────┤
 │                    Presentation Layer                           │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
-│  │ ViewModels  │  │    States   │  │   Events    │              │
+│  │    Pages    │  │   Widgets   │  │ ViewModels  │              │
 │  └─────────────┘  └─────────────┘  └─────────────┘              │
 ├─────────────────────────────────────────────────────────────────┤
 │                     Domain Layer                                │
@@ -90,22 +85,23 @@ Each feature module follows a consistent structure:
 post_module/
 ├── models/
 │   └── post_model.dart
-├── providers/
-│   └── post_providers.dart
+├── pages/
+│   ├── post_details_screen.dart
+│   └── posts_list_screen.dart
 ├── repositories/
 │   ├── post_repository.dart
 │   └── post_repository_impl.dart
-├── screens/
-│   ├── post_details_screen.dart
-│   └── posts_list_screen.dart
 ├── services/
 │   └── post_service.dart
-├── states/
-│   ├── post_details_state.dart
-│   └── posts_list_state.dart
 ├── viewmodels/
-│   ├── post_details_viewmodel.dart
-│   └── posts_list_viewmodel.dart
+│   ├── post_detail/
+│   │   ├── post_details_state.dart
+│   │   ├── post_details_state.freezed.dart
+│   │   └── post_details_viewmodel.dart
+│   └── post_list/
+│       ├── posts_list_state.dart
+│       ├── posts_list_state.freezed.dart
+│       └── posts_list_viewmodel.dart
 ├── post_module.dart
 └── post_router.dart
 ```
@@ -138,8 +134,16 @@ class PostModule extends Module<PostRouter> {
   String get moduleName => 'post';
 
   @override
-  void registerDependencies(GetIt locator, AppConfig appConfig) {
-    // Register services and repositories
+  void registerDependencies(ServiceLocator locator) {
+    // Register services
+    locator.registerLazySingleton<PostService>(
+      () => PostService(locator<http.Client>()),
+    );
+
+    // Register repositories
+    locator.registerLazySingleton<PostRepository>(
+      () => PostRepositoryImpl(locator<PostService>()),
+    );
   }
 }
 ```
@@ -153,6 +157,7 @@ abstract class PostRepository {
   Future<List<Post>> fetchPosts();
   Future<Post> getPost(int id);
   Future<void> createPost(Post post);
+  Future<void> deletePost(int id);
 }
 
 class PostRepositoryImpl implements PostRepository {
@@ -164,12 +169,22 @@ class PostRepositoryImpl implements PostRepository {
   Future<List<Post>> fetchPosts() async {
     return await _service.getPosts();
   }
+
+  @override
+  Future<Post> getPost(int id) async {
+    return await _service.getPost(id);
+  }
+
+  @override
+  Future<void> deletePost(int id) async {
+    await _service.deletePost(id);
+  }
 }
 ```
 
 ### 3. **ViewModel Pattern**
 
-Business logic is encapsulated in ViewModels:
+Business logic is encapsulated in ViewModels that extend the base `ViewModel<T>` class:
 
 ```dart
 class PostsListViewModel extends ViewModel<PostsListState> {
@@ -183,24 +198,36 @@ class PostsListViewModel extends ViewModel<PostsListState> {
   }
 
   Future<void> loadPosts() async {
+    updateState(state.copyWith(status: UiStatus.loading));
+
     try {
-      state = state.loading;
       final posts = await _repository.fetchPosts();
-      state = state.withPosts(posts);
+      updateState(state.copyWith(
+        status: UiStatus.success,
+        posts: posts,
+        errorMessage: null,
+      ));
     } catch (e) {
-      state = state.error(e.toString());
+      updateState(state.copyWith(
+        status: UiStatus.error,
+        errorMessage: e.toString(),
+      ));
     }
+  }
+
+  Future<void> refreshPosts() async {
+    await loadPosts();
   }
 }
 ```
 
 ### 4. **State Management**
 
-States are immutable and type-safe using Freezed:
+States are immutable and type-safe using Freezed, implementing the `UiState<T>` interface:
 
 ```dart
 @freezed
-class PostsListState with _$PostsListState implements UiState {
+class PostsListState with _$PostsListState implements UiState<PostsListState> {
   const factory PostsListState({
     @Default(UiStatus.initial) UiStatus status,
     @Default([]) List<Post> posts,
@@ -209,16 +236,59 @@ class PostsListState with _$PostsListState implements UiState {
 
   const PostsListState._();
 
-  PostsListState get loading => copyWith(status: UiStatus.loading);
-  PostsListState withPosts(List<Post> posts) => copyWith(
-    status: UiStatus.success,
-    posts: posts,
-    errorMessage: null,
-  );
-  PostsListState error(String message) => copyWith(
-    status: UiStatus.error,
-    errorMessage: message,
-  );
+  @override
+  bool get loading => status == UiStatus.loading;
+
+  bool get isInitial => status == UiStatus.initial;
+  bool get isLoading => status == UiStatus.loading;
+  bool get isSuccess => status == UiStatus.success;
+  bool get isError => status == UiStatus.error;
+}
+```
+
+### 5. **Service Layer**
+
+Services handle external data sources and API communication:
+
+```dart
+class PostService {
+  final http.Client _client;
+  static const String _baseUrl = 'https://jsonplaceholder.typicode.com';
+
+  PostService(this._client);
+
+  Future<List<Post>> getPosts() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/posts'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonList = json.decode(response.body);
+        return jsonList.map((json) => Post.fromJson(json)).toList();
+      } else {
+        throw HttpException('Failed to load posts: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching posts: $e');
+    }
+  }
+
+  Future<void> deletePost(int id) async {
+    try {
+      final response = await _client.delete(
+        Uri.parse('$_baseUrl/posts/$id'),
+        headers: {'Content-Type': 'application/json'},
+      );
+
+      if (response.statusCode != 200) {
+        throw HttpException('Failed to delete post: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting post: $e');
+    }
+  }
 }
 ```
 
@@ -265,29 +335,33 @@ The architecture supports comprehensive testing:
 
 ## Benefits
 
-### 1. **Scalability**
+<Stepper>
 
-- Easy to add new features as modules
-- Clear separation of concerns
-- Minimal coupling between modules
+1. **Scalability**
 
-### 2. **Maintainability**
+   - Easy to add new features as modules
+   - Clear separation of concerns
+   - Minimal coupling between modules
 
-- Consistent structure across features
-- Easy to locate and modify code
-- Clear dependency relationships
+1. **Maintainability**
 
-### 3. **Testability**
+   - Consistent structure across features
+   - Easy to locate and modify code
+   - Clear dependency relationships
 
-- Easy to mock dependencies
-- Clear boundaries for testing
-- Comprehensive test coverage
+1. **Testability**
 
-### 4. **Developer Experience**
+   - Easy to mock dependencies
+   - Clear boundaries for testing
+   - Comprehensive test coverage
 
-- Code generation for boilerplate
-- Type-safe development
-- Comprehensive error handling
+1. **Developer Experience**
+
+   - Code generation for boilerplate
+   - Type-safe development
+   - Comprehensive error handling
+
+</Stepper>
 
 ## Next Steps
 

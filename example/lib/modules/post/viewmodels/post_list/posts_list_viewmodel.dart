@@ -1,6 +1,8 @@
+import 'package:modular_flutter/modular_flutter.dart';
 import 'package:viewmodel/viewmodel.dart';
-import '../repositories/post_repository.dart';
-import '../states/posts_list_state.dart';
+
+import '../../repositories/post_repository.dart';
+import 'posts_list_state.dart';
 
 /// ViewModel for the posts list screen
 class PostsListViewModel extends ViewModel<PostsListState> {
@@ -42,3 +44,9 @@ class PostsListViewModel extends ViewModel<PostsListState> {
     }
   }
 }
+
+final postsListViewModelProvider =
+    StateNotifierProvider<PostsListViewModel, PostsListState>((ref) {
+      final repository = serviceLocator<PostRepository>();
+      return PostsListViewModel(repository);
+    });

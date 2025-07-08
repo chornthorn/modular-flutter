@@ -3,8 +3,6 @@ title: Creating Modules
 description: Step-by-step guide to creating feature modules in Modular Flutter
 ---
 
-# Creating Modules
-
 This guide walks you through creating a new feature module from scratch using the Modular Flutter architecture. We'll build a complete "Tasks" module as an example.
 
 ## Prerequisites
@@ -14,6 +12,7 @@ Before creating a module, ensure you have:
 - Basic understanding of the [Modular Flutter architecture](/architecture/overview)
 - Familiarity with [Riverpod state management](https://riverpod.dev)
 - Understanding of [freezed](https://pub.dev/packages/freezed) for immutable classes
+- Knowledge of the [ViewModel pattern](/architecture/viewmodel)
 
 ## Step 1: Module Structure
 
@@ -23,22 +22,23 @@ Create the module directory structure:
 lib/modules/tasks/
 ├── models/
 │   └── task_model.dart
-├── providers/
-│   └── task_providers.dart
+├── pages/
+│   ├── task_list_screen.dart
+│   └── task_details_screen.dart
 ├── repositories/
 │   ├── task_repository.dart
 │   └── task_repository_impl.dart
-├── screens/
-│   ├── task_list_screen.dart
-│   └── task_details_screen.dart
 ├── services/
 │   └── task_service.dart
-├── states/
-│   ├── task_list_state.dart
-│   └── task_details_state.dart
 ├── viewmodels/
-│   ├── task_list_viewmodel.dart
-│   └── task_details_viewmodel.dart
+│   ├── task_detail/
+│   │   ├── task_details_state.dart
+│   │   ├── task_details_state.freezed.dart
+│   │   └── task_details_viewmodel.dart
+│   └── task_list/
+│       ├── task_list_state.dart
+│       ├── task_list_state.freezed.dart
+│       └── task_list_viewmodel.dart
 ├── widgets/
 │   └── task_item_widget.dart
 ├── task_module.dart
@@ -51,26 +51,73 @@ Create the domain model for your feature:
 
 ```dart
 // lib/modules/tasks/models/task_model.dart
-import 'package:freezed_annotation/freezed_annotation.dart';
+class Task {
+  final String id;
+  final String title;
+  final String description;
+  final DateTime createdAt;
+  final bool isCompleted;
+  final DateTime? completedAt;
+  final TaskPriority priority;
 
-part 'task_model.freezed.dart';
-part 'task_model.g.dart';
+  const Task({
+    required this.id,
+    required this.title,
+    required this.description,
+    required this.createdAt,
+    this.isCompleted = false,
+    this.completedAt,
+    this.priority = TaskPriority.medium,
+  });
 
-@freezed
-class Task with _$Task {
-  const factory Task({
-    required String id,
-    required String title,
-    required String description,
-    required DateTime createdAt,
-    @Default(false) bool isCompleted,
+  factory Task.fromJson(Map<String, dynamic> json) {
+    return Task(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      description: json['description'] as String,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      isCompleted: json['isCompleted'] as bool? ?? false,
+      completedAt: json['completedAt'] != null
+          ? DateTime.parse(json['completedAt'] as String)
+          : null,
+      priority: TaskPriority.values.firstWhere(
+        (p) => p.name == json['priority'],
+        orElse: () => TaskPriority.medium,
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'title': title,
+      'description': description,
+      'createdAt': createdAt.toIso8601String(),
+      'isCompleted': isCompleted,
+      'completedAt': completedAt?.toIso8601String(),
+      'priority': priority.name,
+    };
+  }
+
+  Task copyWith({
+    String? id,
+    String? title,
+    String? description,
+    DateTime? createdAt,
+    bool? isCompleted,
     DateTime? completedAt,
-    @Default(TaskPriority.medium) TaskPriority priority,
-  }) = _Task;
-
-  const Task._();
-
-  factory Task.fromJson(Map<String, dynamic> json) => _$TaskFromJson(json);
+    TaskPriority? priority,
+  }) {
+    return Task(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      description: description ?? this.description,
+      createdAt: createdAt ?? this.createdAt,
+      isCompleted: isCompleted ?? this.isCompleted,
+      completedAt: completedAt ?? this.completedAt,
+      priority: priority ?? this.priority,
+    );
+  }
 
   // Helper methods
   bool get isOverdue =>
@@ -79,14 +126,44 @@ class Task with _$Task {
 
   String get displayTitle =>
       title.isEmpty ? 'Untitled Task' : title;
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Task &&
+        other.id == id &&
+        other.title == title &&
+        other.description == description &&
+        other.createdAt == createdAt &&
+        other.isCompleted == isCompleted &&
+        other.completedAt == completedAt &&
+        other.priority == priority;
+  }
+
+  @override
+  int get hashCode {
+    return Object.hash(
+      id,
+      title,
+      description,
+      createdAt,
+      isCompleted,
+      completedAt,
+      priority,
+    );
+  }
+
+  @override
+  String toString() {
+    return 'Task(id: $id, title: $title, description: $description, '
+           'createdAt: $createdAt, isCompleted: $isCompleted, '
+           'completedAt: $completedAt, priority: $priority)';
+  }
 }
 
 enum TaskPriority {
-  @JsonValue('low')
   low,
-  @JsonValue('medium')
   medium,
-  @JsonValue('high')
   high,
 }
 ```
@@ -97,91 +174,130 @@ Define the service that handles external API calls:
 
 ```dart
 // lib/modules/tasks/services/task_service.dart
-import 'package:dio/dio.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../models/task_model.dart';
 
 class TaskService {
-  final Dio _dio;
-  final String _baseUrl;
+  static const String _baseUrl = 'https://api.example.com';
+  final http.Client _client;
 
-  TaskService({
-    required Dio dio,
-    required String baseUrl,
-  }) : _dio = dio, _baseUrl = baseUrl;
+  TaskService({http.Client? client}) : _client = client ?? http.Client();
 
-  Future<List<Task>> getAllTasks() async {
+  /// Fetch all tasks
+  Future<List<Task>> fetchTasks() async {
     try {
-      final response = await _dio.get('$_baseUrl/tasks');
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/tasks'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
 
       if (response.statusCode == 200) {
-        final List<dynamic> data = response.data['data'];
-        return data.map((json) => Task.fromJson(json)).toList();
+        final List<dynamic> jsonData = json.decode(response.body);
+        return jsonData.map((json) => Task.fromJson(json)).toList();
+      } else {
+        throw Exception(
+          'Failed to load tasks: ${response.statusCode} - ${response.reasonPhrase}',
+        );
       }
-
-      throw Exception('Failed to load tasks');
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      throw Exception('Error fetching tasks: $e');
     }
   }
 
-  Future<Task> getTaskById(String id) async {
+  /// Fetch a single task by ID
+  Future<Task> fetchTask(String id) async {
     try {
-      final response = await _dio.get('$_baseUrl/tasks/$id');
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/tasks/$id'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
 
       if (response.statusCode == 200) {
-        return Task.fromJson(response.data['data']);
+        final Map<String, dynamic> jsonData = json.decode(response.body);
+        return Task.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to load task: ${response.statusCode}');
       }
-
-      throw Exception('Task not found');
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      throw Exception('Error fetching task: $e');
     }
   }
 
+  /// Create a new task
   Future<Task> createTask(Task task) async {
     try {
-      final response = await _dio.post(
-        '$_baseUrl/tasks',
-        data: task.toJson(),
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/tasks'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(task.toJson()),
       );
 
       if (response.statusCode == 201) {
-        return Task.fromJson(response.data['data']);
+        final Map<String, dynamic> jsonData = json.decode(response.body);
+        return Task.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to create task: ${response.statusCode}');
       }
-
-      throw Exception('Failed to create task');
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      throw Exception('Error creating task: $e');
     }
   }
 
+  /// Update an existing task
   Future<Task> updateTask(Task task) async {
     try {
-      final response = await _dio.put(
-        '$_baseUrl/tasks/${task.id}',
-        data: task.toJson(),
+      final response = await _client.put(
+        Uri.parse('$_baseUrl/tasks/${task.id}'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(task.toJson()),
       );
 
       if (response.statusCode == 200) {
-        return Task.fromJson(response.data['data']);
+        final Map<String, dynamic> jsonData = json.decode(response.body);
+        return Task.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to update task: ${response.statusCode}');
       }
-
-      throw Exception('Failed to update task');
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      throw Exception('Error updating task: $e');
     }
   }
 
+  /// Delete a task
   Future<void> deleteTask(String id) async {
     try {
-      final response = await _dio.delete('$_baseUrl/tasks/$id');
+      final response = await _client.delete(
+        Uri.parse('$_baseUrl/tasks/$id'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
 
-      if (response.statusCode != 204) {
-        throw Exception('Failed to delete task');
+      if (response.statusCode != 200 && response.statusCode != 204) {
+        throw Exception('Failed to delete task: ${response.statusCode}');
       }
     } catch (e) {
-      throw Exception('Network error: ${e.toString()}');
+      throw Exception('Error deleting task: $e');
     }
+  }
+
+  /// Dispose the HTTP client
+  void dispose() {
+    _client.close();
   }
 }
 ```
@@ -194,11 +310,21 @@ Create the repository pattern for data access:
 // lib/modules/tasks/repositories/task_repository.dart
 import '../models/task_model.dart';
 
+/// Abstract repository interface for task operations
 abstract class TaskRepository {
-  Future<List<Task>> getAllTasks();
-  Future<Task> getTaskById(String id);
+  /// Fetch all tasks
+  Future<List<Task>> fetchTasks();
+
+  /// Fetch a single task by ID
+  Future<Task> fetchTask(String id);
+
+  /// Create a new task
   Future<Task> createTask(Task task);
+
+  /// Update an existing task
   Future<Task> updateTask(Task task);
+
+  /// Delete a task by ID
   Future<void> deleteTask(String id);
 }
 
@@ -207,19 +333,20 @@ import '../models/task_model.dart';
 import '../services/task_service.dart';
 import 'task_repository.dart';
 
+/// Implementation of TaskRepository using TaskService
 class TaskRepositoryImpl implements TaskRepository {
   final TaskService _taskService;
 
   TaskRepositoryImpl(this._taskService);
 
   @override
-  Future<List<Task>> getAllTasks() async {
-    return await _taskService.getAllTasks();
+  Future<List<Task>> fetchTasks() async {
+    return await _taskService.fetchTasks();
   }
 
   @override
-  Future<Task> getTaskById(String id) async {
-    return await _taskService.getTaskById(id);
+  Future<Task> fetchTask(String id) async {
+    return await _taskService.fetchTask(id);
   }
 
   @override
@@ -244,39 +371,40 @@ class TaskRepositoryImpl implements TaskRepository {
 Create freezed state classes for your ViewModels:
 
 ```dart
-// lib/modules/tasks/states/task_list_state.dart
-import 'package:freezed_annotation/freezed_annotation.dart';
+// lib/modules/tasks/viewmodels/task_list/task_list_state.dart
 import 'package:viewmodel/viewmodel.dart';
-import '../models/task_model.dart';
+import '../../models/task_model.dart';
 
 part 'task_list_state.freezed.dart';
 
 @freezed
-class TaskListState with _$TaskListState implements UiState {
+abstract class TaskListState extends UiState<TaskListState> with _$TaskListState {
+  const TaskListState._();
+
   const factory TaskListState({
-    @Default(UiStatus.initial) UiStatus status,
     @Default([]) List<Task> tasks,
     @Default([]) List<Task> selectedTasks,
     @Default(false) bool isSelectionMode,
     @Default('') String searchQuery,
     @Default(TaskFilter.all) TaskFilter filter,
-    String? errorMessage,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    @Default('') String errorMessage,
   }) = _TaskListState;
 
-  const TaskListState._();
+  @override
+  TaskListState get loading => copyWith(uiStatus: UiStatus.loading);
 
-  // State transition helpers
-  TaskListState get loading => copyWith(status: UiStatus.loading);
-
-  TaskListState success(List<Task> tasks) => copyWith(
-    status: UiStatus.success,
-    tasks: tasks,
-    errorMessage: null,
-  );
+  TaskListState get success => copyWith(uiStatus: UiStatus.success);
 
   TaskListState error(String message) => copyWith(
-    status: UiStatus.error,
+    uiStatus: UiStatus.error,
     errorMessage: message,
+  );
+
+  TaskListState withTasks(List<Task> tasks) => copyWith(
+    tasks: tasks,
+    uiStatus: UiStatus.success,
+    errorMessage: '',
   );
 
   // Filtering helpers
@@ -304,7 +432,7 @@ class TaskListState with _$TaskListState implements UiState {
 
   // Selection helpers
   TaskListState toggleSelection(Task task) {
-    final isSelected = selectedTasks.contains(task);
+    final isSelected = selectedTasks.any((t) => t.id == task.id);
     final updatedSelection = isSelected
         ? selectedTasks.where((t) => t.id != task.id).toList()
         : [...selectedTasks, task];
@@ -327,19 +455,77 @@ enum TaskFilter {
   pending,
   overdue,
 }
+
+// lib/modules/tasks/viewmodels/task_detail/task_details_state.dart
+import 'package:viewmodel/viewmodel.dart';
+import '../../models/task_model.dart';
+
+part 'task_details_state.freezed.dart';
+
+@freezed
+abstract class TaskDetailsState extends UiState<TaskDetailsState>
+    with _$TaskDetailsState {
+  const TaskDetailsState._();
+
+  const factory TaskDetailsState({
+    Task? task,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    @Default('') String errorMessage,
+    @Default(false) bool isEditing,
+    @Default(false) bool isSaving,
+    @Default(false) bool isDeleting,
+  }) = _TaskDetailsState;
+
+  @override
+  TaskDetailsState get loading => copyWith(uiStatus: UiStatus.loading);
+
+  TaskDetailsState get success => copyWith(uiStatus: UiStatus.success);
+
+  TaskDetailsState get saving => copyWith(isSaving: true);
+
+  TaskDetailsState get deleting => copyWith(isDeleting: true);
+
+  TaskDetailsState error(String message) => copyWith(
+    uiStatus: UiStatus.error,
+    errorMessage: message,
+    isSaving: false,
+    isDeleting: false,
+  );
+
+  TaskDetailsState withTask(Task task) => copyWith(
+    task: task,
+    uiStatus: UiStatus.success,
+    errorMessage: '',
+    isSaving: false,
+    isDeleting: false,
+  );
+
+  TaskDetailsState get saveSuccess => copyWith(
+    uiStatus: UiStatus.success,
+    isSaving: false,
+    isEditing: false,
+  );
+
+  TaskDetailsState get deleteSuccess => copyWith(
+    uiStatus: UiStatus.success,
+    isDeleting: false,
+  );
+}
 ```
 
 ## Step 6: Create ViewModels
 
-Implement the ViewModel for business logic:
+Implement the ViewModels for business logic:
 
 ```dart
-// lib/modules/tasks/viewmodels/task_list_viewmodel.dart
+// lib/modules/tasks/viewmodels/task_list/task_list_viewmodel.dart
+import 'package:modular_flutter/modular_flutter.dart';
 import 'package:viewmodel/viewmodel.dart';
-import '../models/task_model.dart';
-import '../repositories/task_repository.dart';
-import '../states/task_list_state.dart';
+import '../../models/task_model.dart';
+import '../../repositories/task_repository.dart';
+import 'task_list_state.dart';
 
+/// ViewModel for the task list screen
 class TaskListViewModel extends ViewModel<TaskListState> {
   final TaskRepository _taskRepository;
 
@@ -350,36 +536,43 @@ class TaskListViewModel extends ViewModel<TaskListState> {
     await loadTasks();
   }
 
+  /// Load all tasks from the repository
   Future<void> loadTasks() async {
     try {
       state = state.loading;
-      final tasks = await _taskRepository.getAllTasks();
-      state = state.success(tasks);
+      final tasks = await _taskRepository.fetchTasks();
+      state = state.withTasks(tasks);
     } catch (e) {
       state = state.error(e.toString());
     }
   }
 
+  /// Refresh the tasks list
   Future<void> refreshTasks() async {
     await loadTasks();
   }
 
+  /// Update search query
   void updateSearchQuery(String query) {
     state = state.copyWith(searchQuery: query);
   }
 
+  /// Update filter
   void updateFilter(TaskFilter filter) {
     state = state.copyWith(filter: filter);
   }
 
+  /// Toggle task selection
   void toggleTaskSelection(Task task) {
     state = state.toggleSelection(task);
   }
 
+  /// Clear selection
   void clearSelection() {
     state = state.clearSelection();
   }
 
+  /// Delete selected tasks
   Future<void> deleteSelectedTasks() async {
     if (state.selectedTasks.isEmpty) return;
 
@@ -397,6 +590,7 @@ class TaskListViewModel extends ViewModel<TaskListState> {
     }
   }
 
+  /// Toggle task completion status
   Future<void> toggleTaskCompletion(Task task) async {
     try {
       final updatedTask = task.copyWith(
@@ -411,73 +605,122 @@ class TaskListViewModel extends ViewModel<TaskListState> {
     }
   }
 }
-```
 
-## Step 7: Create Providers
-
-Define Riverpod providers for dependency injection:
-
-```dart
-// lib/modules/tasks/providers/task_providers.dart
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:get_it/get_it.dart';
-import '../repositories/task_repository.dart';
-import '../states/task_list_state.dart';
-import '../viewmodels/task_list_viewmodel.dart';
-
-// Repository provider
-final taskRepositoryProvider = Provider<TaskRepository>((ref) {
-  return GetIt.instance<TaskRepository>();
-});
-
-// ViewModels
 final taskListViewModelProvider =
     StateNotifierProvider<TaskListViewModel, TaskListState>((ref) {
-  final repository = ref.read(taskRepositoryProvider);
-  return TaskListViewModel(repository);
-});
+      final repository = serviceLocator<TaskRepository>();
+      return TaskListViewModel(repository);
+    });
 
-// Computed providers
-final filteredTasksProvider = Provider<List<Task>>((ref) {
-  final state = ref.watch(taskListViewModelProvider);
-  return state.filteredTasks;
-});
+// lib/modules/tasks/viewmodels/task_detail/task_details_viewmodel.dart
+import 'package:modular_flutter/modular_flutter.dart';
+import 'package:viewmodel/viewmodel.dart';
+import '../../models/task_model.dart';
+import '../../repositories/task_repository.dart';
+import 'task_details_state.dart';
 
-final taskStatsProvider = Provider<TaskStats>((ref) {
-  final tasks = ref.watch(filteredTasksProvider);
-  return TaskStats(
-    total: tasks.length,
-    completed: tasks.where((t) => t.isCompleted).length,
-    pending: tasks.where((t) => !t.isCompleted).length,
-    overdue: tasks.where((t) => t.isOverdue).length,
-  );
-});
+/// ViewModel for the task details screen
+class TaskDetailsViewModel extends ViewModel<TaskDetailsState> {
+  final TaskRepository _taskRepository;
+  final String? taskId;
 
-class TaskStats {
-  final int total;
-  final int completed;
-  final int pending;
-  final int overdue;
+  TaskDetailsViewModel(this._taskRepository, this.taskId)
+      : super(const TaskDetailsState());
 
-  TaskStats({
-    required this.total,
-    required this.completed,
-    required this.pending,
-    required this.overdue,
-  });
+  @override
+  Future<void> onInit() async {
+    if (taskId != null) {
+      await loadTask();
+    } else {
+      // Create mode - initialize with empty task
+      state = state.copyWith(isEditing: true);
+    }
+  }
+
+  /// Load a specific task by ID
+  Future<void> loadTask() async {
+    if (taskId == null) return;
+
+    try {
+      state = state.loading;
+      final task = await _taskRepository.fetchTask(taskId!);
+      state = state.withTask(task);
+    } catch (e) {
+      state = state.error(e.toString());
+    }
+  }
+
+  /// Enable editing mode
+  void startEditing() {
+    state = state.copyWith(isEditing: true);
+  }
+
+  /// Cancel editing
+  void cancelEditing() {
+    state = state.copyWith(isEditing: false);
+  }
+
+  /// Save task changes
+  Future<bool> saveTask(Task task) async {
+    try {
+      state = state.saving;
+
+      Task savedTask;
+      if (taskId == null) {
+        // Create new task
+        savedTask = await _taskRepository.createTask(task);
+      } else {
+        // Update existing task
+        savedTask = await _taskRepository.updateTask(task);
+      }
+
+      state = state.withTask(savedTask).saveSuccess;
+      return true;
+    } catch (e) {
+      state = state.error('Failed to save task: ${e.toString()}');
+      return false;
+    }
+  }
+
+  /// Delete the current task
+  Future<bool> deleteTask() async {
+    if (state.task == null) return false;
+
+    try {
+      state = state.deleting;
+      await _taskRepository.deleteTask(state.task!.id);
+      state = state.deleteSuccess;
+      return true;
+    } catch (e) {
+      state = state.error('Failed to delete task: ${e.toString()}');
+      return false;
+    }
+  }
+
+  /// Refresh the task details
+  Future<void> refreshTask() async {
+    await loadTask();
+  }
 }
+
+final taskDetailsViewModelProvider =
+    StateNotifierProvider.family<TaskDetailsViewModel, TaskDetailsState, String?>(
+  (ref, taskId) {
+    final repository = serviceLocator.get<TaskRepository>();
+    return TaskDetailsViewModel(repository, taskId);
+  },
+);
 ```
 
-## Step 8: Create the Router
+## Step 7: Create the Router
 
 Define routing for your module:
 
 ```dart
 // lib/modules/tasks/task_router.dart
-import 'package:go_router/go_router.dart';
-import 'package:modular_core/modular_core.dart';
-import 'screens/task_list_screen.dart';
-import 'screens/task_details_screen.dart';
+import 'package:modular_flutter/modular_flutter.dart';
+import 'pages/task_list_screen.dart';
+import 'pages/task_details_screen.dart';
 
 class TaskRouter extends ModuleRouter {
   @override
@@ -489,44 +732,39 @@ class TaskRouter extends ModuleRouter {
       path: basePath,
       name: 'task-list',
       builder: (context, state) => const TaskListScreen(),
-      routes: [
-        GoRoute(
-          path: '/create',
-          name: 'task-create',
-          builder: (context, state) => const TaskDetailsScreen(),
-        ),
-        GoRoute(
-          path: '/:taskId',
-          name: 'task-details',
-          builder: (context, state) {
-            final taskId = state.pathParameters['taskId']!;
-            return TaskDetailsScreen(taskId: taskId);
-          },
-          routes: [
-            GoRoute(
-              path: '/edit',
-              name: 'task-edit',
-              builder: (context, state) {
-                final taskId = state.pathParameters['taskId']!;
-                return TaskDetailsScreen(taskId: taskId, isEditing: true);
-              },
-            ),
-          ],
-        ),
-      ],
+    ),
+    GoRoute(
+      path: '$basePath/create',
+      name: 'task-create',
+      builder: (context, state) => const TaskDetailsScreen(),
+    ),
+    GoRoute(
+      path: '$basePath/:taskId',
+      name: 'task-details',
+      builder: (context, state) {
+        final taskId = state.pathParameters['taskId']!;
+        return TaskDetailsScreen(taskId: taskId);
+      },
+    ),
+    GoRoute(
+      path: '$basePath/:taskId/edit',
+      name: 'task-edit',
+      builder: (context, state) {
+        final taskId = state.pathParameters['taskId']!;
+        return TaskDetailsScreen(taskId: taskId, isEditing: true);
+      },
     ),
   ];
 }
 ```
 
-## Step 9: Create the Module Class
+## Step 8: Create the Module Class
 
 Implement the main module class:
 
 ```dart
 // lib/modules/tasks/task_module.dart
-import 'package:get_it/get_it.dart';
-import 'package:modular_core/modular_core.dart';
+import 'package:modular_flutter/modular_flutter.dart';
 import 'repositories/task_repository.dart';
 import 'repositories/task_repository_impl.dart';
 import 'services/task_service.dart';
@@ -540,16 +778,11 @@ class TaskModule extends Module<TaskRouter> {
   String get moduleName => 'tasks';
 
   @override
-  void registerDependencies(GetIt locator, AppConfig appConfig) {
-    // Register services
-    locator.registerLazySingleton<TaskService>(
-      () => TaskService(
-        dio: locator.get(),
-        baseUrl: appConfig.apiBaseUrl,
-      ),
-    );
+  void registerDependencies(ServiceLocator locator, AppConfig appConfig) {
+    // Register the task service as a singleton
+    locator.registerLazySingleton<TaskService>(() => TaskService());
 
-    // Register repositories
+    // Register the task repository as a singleton
     locator.registerLazySingleton<TaskRepository>(
       () => TaskRepositoryImpl(locator.get<TaskService>()),
     );
@@ -557,31 +790,35 @@ class TaskModule extends Module<TaskRouter> {
 }
 ```
 
-## Step 10: Create UI Screens
+## Step 9: Create UI Screens
 
 Implement the screens using the ViewModels:
 
 ```dart
-// lib/modules/tasks/screens/task_list_screen.dart
+// lib/modules/tasks/pages/task_list_screen.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import '../providers/task_providers.dart';
-import '../states/task_list_state.dart';
+import 'package:modular_flutter/modular_flutter.dart';
+import 'package:viewmodel/viewmodel.dart';
+import '../viewmodels/task_list/task_list_state.dart';
+import '../viewmodels/task_list/task_list_viewmodel.dart';
 import '../widgets/task_item_widget.dart';
 
 class TaskListScreen extends ConsumerWidget {
   const TaskListScreen({super.key});
 
+  Future<void> _refreshTasks(WidgetRef ref) async {
+    await ref.read(taskListViewModelProvider.notifier).refreshTasks();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(taskListViewModelProvider);
     final viewModel = ref.read(taskListViewModelProvider.notifier);
-    final stats = ref.watch(taskStatsProvider);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Tasks'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         actions: [
           if (state.isSelectionMode) ...[
             IconButton(
@@ -595,7 +832,7 @@ class TaskListScreen extends ConsumerWidget {
           ] else ...[
             IconButton(
               icon: const Icon(Icons.add),
-              onPressed: () => context.go('/tasks/create'),
+              onPressed: () => context.push('/tasks/create'),
             ),
           ],
         ],
@@ -635,21 +872,6 @@ class TaskListScreen extends ConsumerWidget {
             ),
           ),
 
-          // Stats Section
-          if (stats.total > 0)
-            Container(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  _buildStat('Total', stats.total, Colors.blue),
-                  _buildStat('Completed', stats.completed, Colors.green),
-                  _buildStat('Pending', stats.pending, Colors.orange),
-                  _buildStat('Overdue', stats.overdue, Colors.red),
-                ],
-              ),
-            ),
-
           // Tasks List
           Expanded(
             child: _buildTasksList(context, state, viewModel),
@@ -664,62 +886,74 @@ class TaskListScreen extends ConsumerWidget {
     TaskListState state,
     TaskListViewModel viewModel,
   ) {
-    return switch (state.status) {
-      UiStatus.loading => const Center(child: CircularProgressIndicator()),
-      UiStatus.error => Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(state.errorMessage ?? 'An error occurred'),
-              ElevatedButton(
-                onPressed: viewModel.refreshTasks,
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        ),
-      _ => RefreshIndicator(
-          onRefresh: viewModel.refreshTasks,
-          child: state.filteredTasks.isEmpty
-              ? const Center(child: Text('No tasks found'))
-              : ListView.builder(
-                  itemCount: state.filteredTasks.length,
-                  itemBuilder: (context, index) {
-                    final task = state.filteredTasks[index];
-                    final isSelected = state.selectedTasks.contains(task);
+    if (state.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-                    return TaskItemWidget(
-                      task: task,
-                      isSelected: isSelected,
-                      isSelectionMode: state.isSelectionMode,
-                      onTap: () => state.isSelectionMode
-                          ? viewModel.toggleTaskSelection(task)
-                          : context.go('/tasks/${task.id}'),
-                      onLongPress: () => viewModel.toggleTaskSelection(task),
-                      onToggleComplete: () => viewModel.toggleTaskCompletion(task),
-                    );
-                  },
-                ),
+    if (state.isError) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error loading tasks',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              state.errorMessage,
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _refreshTasks(ref),
+              child: const Text('Retry'),
+            ),
+          ],
         ),
-    };
-  }
+      );
+    }
 
-  Widget _buildStat(String label, int value, Color color) {
-    return Column(
-      children: [
-        Text(
-          value.toString(),
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
+    if (state.filteredTasks.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.task_alt, size: 64),
+            SizedBox(height: 16),
+            Text('No tasks found', style: TextStyle(fontSize: 18)),
+          ],
         ),
-        Text(
-          label,
-          style: const TextStyle(fontSize: 12),
-        ),
-      ],
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _refreshTasks(ref),
+      child: ListView.builder(
+        itemCount: state.filteredTasks.length,
+        itemBuilder: (context, index) {
+          final task = state.filteredTasks[index];
+          final isSelected = state.selectedTasks.any((t) => t.id == task.id);
+
+          return TaskItemWidget(
+            task: task,
+            isSelected: isSelected,
+            isSelectionMode: state.isSelectionMode,
+            onTap: () => state.isSelectionMode
+                ? viewModel.toggleTaskSelection(task)
+                : context.push('/tasks/${task.id}'),
+            onLongPress: () => viewModel.toggleTaskSelection(task),
+            onToggleComplete: () => viewModel.toggleTaskCompletion(task),
+          );
+        },
+      ),
     );
   }
 
@@ -734,12 +968,13 @@ class TaskListScreen extends ConsumerWidget {
 }
 ```
 
-## Step 11: Register the Module
+## Step 10: Register the Module
 
 Add your module to the main application:
 
 ```dart
 // lib/main.dart
+import 'package:modular_flutter/modular_flutter.dart';
 import 'modules/tasks/task_module.dart';
 
 void main() async {
@@ -750,8 +985,6 @@ void main() async {
     final config = AppConfigImpl();
     await config.loadEnvVariables('.env');
     locator.registerLazySingleton<AppConfig>(() => config);
-
-    locator.registerLazySingleton<Dio>(() => Dio());
   });
 
   runApp(MyApp());
@@ -774,16 +1007,17 @@ class MyApp extends StatelessWidget {
 }
 ```
 
-## Step 12: Run Code Generation
+## Step 11: Run Code Generation
 
-Generate the necessary files:
+Generate the necessary Freezed files:
 
 ```bash
 # Generate freezed classes
-flutter packages pub run build_runner build --delete-conflicting-outputs
+dart pub get
+dart pub run build_runner build
 
-# Or use melos if configured
-melos generate
+# For watching changes during development
+dart pub run build_runner watch
 ```
 
 ## Best Practices
@@ -800,11 +1034,87 @@ melos generate
 - Provide user-friendly error messages
 - Implement retry mechanisms where appropriate
 
+```dart
+class RobustViewModel extends ViewModel<RobustState> {
+  Future<void> performAction() async {
+    try {
+      state = state.loading;
+      final result = await _repository.performAction();
+      state = state.copyWith(
+        result: result,
+        uiStatus: UiStatus.success,
+        message: 'Operation completed successfully',
+      );
+    } on NetworkException catch (e) {
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'Network error: Please check your connection',
+      );
+    } on ValidationException catch (e) {
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'Validation error: ${e.message}',
+      );
+    } catch (e) {
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'An unexpected error occurred',
+      );
+      // Report to crash analytics
+      _reportError(e);
+    }
+  }
+}
+```
+
 ### 3. Testing
 
 - Write unit tests for ViewModels
 - Mock repositories and services
 - Test state transitions and business logic
+
+```dart
+void main() {
+  group('TaskListViewModel', () {
+    late MockTaskRepository mockRepository;
+    late TaskListViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockTaskRepository();
+      viewModel = TaskListViewModel(mockRepository);
+    });
+
+    tearDown(() {
+      viewModel.dispose();
+    });
+
+    test('should load tasks successfully', () async {
+      // Arrange
+      final tasks = [Task(id: '1', title: 'Test', description: 'Body', createdAt: DateTime.now())];
+      when(mockRepository.fetchTasks()).thenAnswer((_) async => tasks);
+
+      // Act
+      await viewModel.loadTasks();
+
+      // Assert
+      expect(viewModel.state.uiStatus, UiStatus.success);
+      expect(viewModel.state.tasks, tasks);
+    });
+
+    test('should handle errors gracefully', () async {
+      // Arrange
+      when(mockRepository.fetchTasks()).thenThrow(Exception('Network error'));
+
+      // Act
+      await viewModel.loadTasks();
+
+      // Assert
+      expect(viewModel.state.uiStatus, UiStatus.error);
+      expect(viewModel.state.errorMessage, contains('Network error'));
+    });
+  });
+}
+```
 
 ### 4. Performance
 
@@ -823,11 +1133,11 @@ melos generate
 ### Repository Pattern
 
 ```dart
-abstract class Repository {
-  Future<List<Entity>> getAll();
-  Future<Entity> getById(String id);
-  Future<Entity> create(Entity entity);
-  Future<Entity> update(Entity entity);
+abstract class Repository<T> {
+  Future<List<T>> fetchAll();
+  Future<T> fetchById(String id);
+  Future<T> create(T entity);
+  Future<T> update(T entity);
   Future<void> delete(String id);
 }
 ```
@@ -836,31 +1146,176 @@ abstract class Repository {
 
 ```dart
 class ApiService {
-  final Dio _dio;
+  final http.Client _client;
   final String _baseUrl;
 
   Future<T> get<T>(String path) async {
-    // Implementation
+    final response = await _client.get(Uri.parse('$_baseUrl$path'));
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    }
+    throw Exception('Request failed: ${response.statusCode}');
   }
 
   Future<T> post<T>(String path, dynamic data) async {
-    // Implementation
+    final response = await _client.post(
+      Uri.parse('$_baseUrl$path'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(data),
+    );
+    if (response.statusCode == 201) {
+      return jsonDecode(response.body);
+    }
+    throw Exception('Request failed: ${response.statusCode}');
   }
 }
 ```
 
-### Error Handling
+### State Pattern
 
 ```dart
-class ViewModel {
-  Future<void> performAction() async {
-    try {
-      state = state.loading;
-      final result = await repository.action();
-      state = state.success(result);
-    } catch (e) {
-      state = state.error(e.toString());
-    }
+@freezed
+abstract class FeatureState extends UiState<FeatureState> with _$FeatureState {
+  const FeatureState._();
+
+  const factory FeatureState({
+    // Core state
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    String? errorMessage,
+
+    // Feature-specific data
+    FeatureData? data,
+
+    // UI state
+    @Default(false) bool isEditing,
+  }) = _FeatureState;
+
+  @override
+  FeatureState get loading => copyWith(uiStatus: UiStatus.loading);
+}
+```
+
+## Widget Components
+
+### Task Item Widget
+
+```dart
+// lib/modules/tasks/widgets/task_item_widget.dart
+import 'package:flutter/material.dart';
+import '../models/task_model.dart';
+
+class TaskItemWidget extends StatelessWidget {
+  final Task task;
+  final bool isSelected;
+  final bool isSelectionMode;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+  final VoidCallback onToggleComplete;
+
+  const TaskItemWidget({
+    super.key,
+    required this.task,
+    required this.isSelected,
+    required this.isSelectionMode,
+    required this.onTap,
+    required this.onLongPress,
+    required this.onToggleComplete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: ListTile(
+        leading: isSelectionMode
+            ? Checkbox(
+                value: isSelected,
+                onChanged: (_) => onTap(),
+              )
+            : CircleAvatar(
+                backgroundColor: _getPriorityColor(task.priority),
+                child: Text(
+                  task.priority.name.substring(0, 1).toUpperCase(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+        title: Text(
+          task.displayTitle,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            decoration: task.isCompleted ? TextDecoration.lineThrough : null,
+          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              task.description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Icon(
+                  task.isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+                  size: 16,
+                  color: task.isCompleted ? Colors.green : Colors.grey,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  task.isCompleted ? 'Completed' : 'Pending',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: task.isCompleted ? Colors.green : Colors.grey,
+                  ),
+                ),
+                if (task.isOverdue) ...[
+                  const SizedBox(width: 8),
+                  const Icon(
+                    Icons.warning,
+                    size: 16,
+                    color: Colors.red,
+                  ),
+                  const Text(
+                    'Overdue',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+        trailing: isSelectionMode
+            ? null
+            : IconButton(
+                icon: Icon(
+                  task.isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: task.isCompleted ? Colors.green : Colors.grey,
+                ),
+                onPressed: onToggleComplete,
+              ),
+        onTap: onTap,
+        onLongPress: onLongPress,
+        selected: isSelected,
+      ),
+    );
+  }
+
+  Color _getPriorityColor(TaskPriority priority) {
+    return switch (priority) {
+      TaskPriority.low => Colors.blue,
+      TaskPriority.medium => Colors.orange,
+      TaskPriority.high => Colors.red,
+    };
   }
 }
 ```
@@ -871,7 +1326,8 @@ class ViewModel {
 - [Explore Dependency Injection](/guides/dependency-injection)
 - [Understand Routing](/guides/routing)
 - [See Complete Examples](/examples/post-module)
+- [Learn about ViewModel Pattern](/architecture/viewmodel)
 
 ---
 
-You now have a complete module! This pattern can be replicated for any feature in your application, maintaining consistency and scalability across your Flutter project.
+You now have a complete module following the current architectural patterns! This approach provides consistency, maintainability, and scalability across your Flutter application.

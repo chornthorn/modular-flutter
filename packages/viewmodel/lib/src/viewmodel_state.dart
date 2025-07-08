@@ -13,13 +13,13 @@ import 'viewmodel_status.dart';
 ///
 ///   const factory CounterUiState({
 ///     required int value,
-///     @Default(Status.initial) Status status,
+///     @Default(UiStatus.initial) UiStatus uiStatus,
 ///   }) = _CounterUiState;
 /// }
 /// ```
 abstract class UiState<T> {
   /// The current status of the ViewModel.
-  Status get status;
+  UiStatus get uiStatus;
 
   /// Protected const constructor for Freezed subclasses.
   const UiState();
@@ -30,14 +30,14 @@ abstract class UiState<T> {
   T get loading;
 
   /// Returns true if the status is initial.
-  bool get isInitial => status == Status.initial;
+  bool get isInitial => uiStatus == UiStatus.initial;
 
   /// Returns true if the status is loading.
-  bool get isLoading => status == Status.loading;
+  bool get isLoading => uiStatus == UiStatus.loading;
 
   /// Returns true if the status is success.
-  bool get isSuccess => status == Status.success;
+  bool get isSuccess => uiStatus == UiStatus.success;
 
   /// Returns true if the status is error.
-  bool get isError => status == Status.error;
+  bool get isError => uiStatus == UiStatus.error;
 }

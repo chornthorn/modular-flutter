@@ -1,13 +1,25 @@
 import type { ZudokuConfig } from "zudoku";
+import PreviewBanner from "./src/PreviewBanner";
 
 const config: ZudokuConfig = {
   basePath: "/modular-flutter",
+  canonicalUrlOrigin: "https://chornthorn.github.io/modular-flutter",
   site: {
     title: "Modular Flutter",
     showPoweredBy: false,
+    banner: {
+      message: <PreviewBanner />,
+      dismissible: true,
+    },
+    footer: {
+      social: [
+        { icon: "github", href: "https://github.com/chornthorn/modular-flutter" },
+      ],
+      copyright: `© ${new Date().getFullYear()} Modular Flutter. All rights reserved.`,
+    }
   },
   syntaxHighlighting: {
-    languages: ['dart', 'json', 'yaml', 'markdown'],
+    languages: ['dart', 'json', 'yaml', 'markdown', 'typescript'],
   },
   navigation: [
     {
@@ -57,8 +69,6 @@ const config: ZudokuConfig = {
           icon: "code",
           items: [
             "/examples/post-module",
-            "/examples/authentication",
-            // "/examples/configuration",
           ],
         }
       ],
@@ -87,7 +97,7 @@ const config: ZudokuConfig = {
     fonts: {
       mono: "IBM Plex Mono"
     }
-  }
+  },
 };
 
 export default config;

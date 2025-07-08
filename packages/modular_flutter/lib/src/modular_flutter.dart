@@ -194,6 +194,18 @@ class Modular {
     }
   }
 
+  /// Get a service from the dependency injection container asynchronously
+  static Future<T> getAsync<T extends Object>() async {
+    try {
+      final service = await ServiceLocator.instance.getAsync<T>();
+      _observerManager.notifyServiceResolved(T);
+      return service;
+    } catch (e, stackTrace) {
+      _observerManager.notifyServiceResolutionFailed(T, e, stackTrace);
+      rethrow;
+    }
+  }
+
   /// Check if a service is registered
   static bool isRegistered<T extends Object>() {
     return ServiceLocator.instance.isRegistered<T>();

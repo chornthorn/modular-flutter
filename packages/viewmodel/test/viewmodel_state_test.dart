@@ -6,7 +6,7 @@ import 'package:viewmodel/viewmodel.dart';
 class TestUiState extends UiState<TestUiState> {
   final String value;
   @override
-  final Status status;
+  final UiStatus uiStatus;
   @override
   final String? message;
   @override
@@ -14,23 +14,23 @@ class TestUiState extends UiState<TestUiState> {
 
   const TestUiState({
     this.value = 'test',
-    this.status = Status.initial,
+    this.uiStatus = UiStatus.initial,
     this.message,
     this.errorMessage,
   });
 
   @override
-  TestUiState get loading => copyWith(status: Status.loading);
+  TestUiState get loading => copyWith(uiStatus: UiStatus.loading);
 
   TestUiState copyWith({
     String? value,
-    Status? status,
+    UiStatus? uiStatus,
     String? message,
     String? errorMessage,
   }) {
     return TestUiState(
       value: value ?? this.value,
-      status: status ?? this.status,
+      uiStatus: uiStatus ?? this.uiStatus,
       message: message ?? this.message,
       errorMessage: errorMessage ?? this.errorMessage,
     );
@@ -41,17 +41,17 @@ class TestUiState extends UiState<TestUiState> {
     if (identical(this, other)) return true;
     return other is TestUiState &&
         other.value == value &&
-        other.status == status &&
+        other.uiStatus == uiStatus &&
         other.message == message &&
         other.errorMessage == errorMessage;
   }
 
   @override
-  int get hashCode => Object.hash(value, status, message, errorMessage);
+  int get hashCode => Object.hash(value, uiStatus, message, errorMessage);
 
   @override
   String toString() {
-    return 'TestUiState(value: $value, status: $status, message: $message, errorMessage: $errorMessage)';
+    return 'TestUiState(value: $value, uiStatus: $uiStatus, message: $message, errorMessage: $errorMessage)';
   }
 }
 
@@ -66,7 +66,7 @@ void main() {
     group('constructor', () {
       test('should create state with default values', () {
         expect(initialState.value, 'test');
-        expect(initialState.status, Status.initial);
+        expect(initialState.uiStatus, UiStatus.initial);
         expect(initialState.message, isNull);
         expect(initialState.errorMessage, isNull);
       });
@@ -74,13 +74,13 @@ void main() {
       test('should create state with custom values', () {
         final state = const TestUiState(
           value: 'custom',
-          status: Status.success,
+          uiStatus: UiStatus.success,
           message: 'success message',
           errorMessage: 'error message',
         );
 
         expect(state.value, 'custom');
-        expect(state.status, Status.success);
+        expect(state.uiStatus, UiStatus.success);
         expect(state.message, 'success message');
         expect(state.errorMessage, 'error message');
       });
@@ -88,7 +88,7 @@ void main() {
 
     group('status convenience methods', () {
       test('isInitial should return true for initial status', () {
-        final state = initialState.copyWith(status: Status.initial);
+        final state = initialState.copyWith(uiStatus: UiStatus.initial);
         expect(state.isInitial, isTrue);
         expect(state.isLoading, isFalse);
         expect(state.isSuccess, isFalse);
@@ -96,7 +96,7 @@ void main() {
       });
 
       test('isLoading should return true for loading status', () {
-        final state = initialState.copyWith(status: Status.loading);
+        final state = initialState.copyWith(uiStatus: UiStatus.loading);
         expect(state.isLoading, isTrue);
         expect(state.isInitial, isFalse);
         expect(state.isSuccess, isFalse);
@@ -104,7 +104,7 @@ void main() {
       });
 
       test('isSuccess should return true for success status', () {
-        final state = initialState.copyWith(status: Status.success);
+        final state = initialState.copyWith(uiStatus: UiStatus.success);
         expect(state.isSuccess, isTrue);
         expect(state.isInitial, isFalse);
         expect(state.isLoading, isFalse);
@@ -112,7 +112,7 @@ void main() {
       });
 
       test('isError should return true for error status', () {
-        final state = initialState.copyWith(status: Status.error);
+        final state = initialState.copyWith(uiStatus: UiStatus.error);
         expect(state.isError, isTrue);
         expect(state.isInitial, isFalse);
         expect(state.isLoading, isFalse);
@@ -124,14 +124,14 @@ void main() {
       test('should return state with loading status', () {
         final state = const TestUiState(
           value: 'custom',
-          status: Status.success,
+          uiStatus: UiStatus.success,
           message: 'original message',
           errorMessage: 'original error',
         );
 
         final loadingState = state.loading;
 
-        expect(loadingState.status, Status.loading);
+        expect(loadingState.uiStatus, UiStatus.loading);
         expect(loadingState.value, 'custom');
         expect(loadingState.message, 'original message');
         expect(loadingState.errorMessage, 'original error');
@@ -142,12 +142,12 @@ void main() {
       test('should support copyWith method', () {
         final state = initialState.copyWith(
           value: 'updated',
-          status: Status.success,
+          uiStatus: UiStatus.success,
           message: 'done',
         );
 
         expect(state.value, 'updated');
-        expect(state.status, Status.success);
+        expect(state.uiStatus, UiStatus.success);
         expect(state.message, 'done');
         expect(state.errorMessage, isNull);
       });
@@ -155,7 +155,7 @@ void main() {
       test('should preserve unchanged values in copyWith', () {
         final original = const TestUiState(
           value: 'original',
-          status: Status.success,
+          uiStatus: UiStatus.success,
           message: 'original message',
           errorMessage: 'original error',
         );
@@ -163,7 +163,7 @@ void main() {
         final updated = original.copyWith(value: 'updated');
 
         expect(updated.value, 'updated');
-        expect(updated.status, Status.success);
+        expect(updated.uiStatus, UiStatus.success);
         expect(updated.message, 'original message');
         expect(updated.errorMessage, 'original error');
       });
@@ -193,14 +193,14 @@ void main() {
       test('should have proper toString representation', () {
         final state = const TestUiState(
           value: 'test',
-          status: Status.success,
+          uiStatus: UiStatus.success,
           message: 'success',
         );
 
         final stringRepresentation = state.toString();
         expect(stringRepresentation, contains('TestUiState'));
         expect(stringRepresentation, contains('test'));
-        expect(stringRepresentation, contains('Status.success'));
+        expect(stringRepresentation, contains('UiStatus.success'));
         expect(stringRepresentation, contains('success'));
       });
     });

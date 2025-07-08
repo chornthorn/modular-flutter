@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PostDetailsState {
 
- Post? get post; Status get status; String get errorMessage; bool get isDeleting;
+ Post? get post; UiStatus get uiStatus; String get errorMessage; bool get isDeleting;
 /// Create a copy of PostDetailsState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $PostDetailsStateCopyWith<PostDetailsState> get copyWith => _$PostDetailsStateCo
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PostDetailsState&&(identical(other.post, post) || other.post == post)&&(identical(other.status, status) || other.status == status)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage)&&(identical(other.isDeleting, isDeleting) || other.isDeleting == isDeleting));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PostDetailsState&&(identical(other.post, post) || other.post == post)&&(identical(other.uiStatus, uiStatus) || other.uiStatus == uiStatus)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage)&&(identical(other.isDeleting, isDeleting) || other.isDeleting == isDeleting));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,post,status,errorMessage,isDeleting);
+int get hashCode => Object.hash(runtimeType,post,uiStatus,errorMessage,isDeleting);
 
 @override
 String toString() {
-  return 'PostDetailsState(post: $post, status: $status, errorMessage: $errorMessage, isDeleting: $isDeleting)';
+  return 'PostDetailsState(post: $post, uiStatus: $uiStatus, errorMessage: $errorMessage, isDeleting: $isDeleting)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $PostDetailsStateCopyWith<$Res>  {
   factory $PostDetailsStateCopyWith(PostDetailsState value, $Res Function(PostDetailsState) _then) = _$PostDetailsStateCopyWithImpl;
 @useResult
 $Res call({
- Post? post, Status status, String errorMessage, bool isDeleting
+ Post? post, UiStatus uiStatus, String errorMessage, bool isDeleting
 });
 
 
@@ -62,11 +62,11 @@ class _$PostDetailsStateCopyWithImpl<$Res>
 
 /// Create a copy of PostDetailsState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? post = freezed,Object? status = null,Object? errorMessage = null,Object? isDeleting = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? post = freezed,Object? uiStatus = null,Object? errorMessage = null,Object? isDeleting = null,}) {
   return _then(_self.copyWith(
 post: freezed == post ? _self.post : post // ignore: cast_nullable_to_non_nullable
-as Post?,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as Status,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
+as Post?,uiStatus: null == uiStatus ? _self.uiStatus : uiStatus // ignore: cast_nullable_to_non_nullable
+as UiStatus,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
 as String,isDeleting: null == isDeleting ? _self.isDeleting : isDeleting // ignore: cast_nullable_to_non_nullable
 as bool,
   ));
@@ -153,10 +153,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Post? post,  Status status,  String errorMessage,  bool isDeleting)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( Post? post,  UiStatus uiStatus,  String errorMessage,  bool isDeleting)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PostDetailsState() when $default != null:
-return $default(_that.post,_that.status,_that.errorMessage,_that.isDeleting);case _:
+return $default(_that.post,_that.uiStatus,_that.errorMessage,_that.isDeleting);case _:
   return orElse();
 
 }
@@ -174,10 +174,10 @@ return $default(_that.post,_that.status,_that.errorMessage,_that.isDeleting);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Post? post,  Status status,  String errorMessage,  bool isDeleting)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( Post? post,  UiStatus uiStatus,  String errorMessage,  bool isDeleting)  $default,) {final _that = this;
 switch (_that) {
 case _PostDetailsState():
-return $default(_that.post,_that.status,_that.errorMessage,_that.isDeleting);case _:
+return $default(_that.post,_that.uiStatus,_that.errorMessage,_that.isDeleting);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -194,10 +194,10 @@ return $default(_that.post,_that.status,_that.errorMessage,_that.isDeleting);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Post? post,  Status status,  String errorMessage,  bool isDeleting)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( Post? post,  UiStatus uiStatus,  String errorMessage,  bool isDeleting)?  $default,) {final _that = this;
 switch (_that) {
 case _PostDetailsState() when $default != null:
-return $default(_that.post,_that.status,_that.errorMessage,_that.isDeleting);case _:
+return $default(_that.post,_that.uiStatus,_that.errorMessage,_that.isDeleting);case _:
   return null;
 
 }
@@ -209,11 +209,11 @@ return $default(_that.post,_that.status,_that.errorMessage,_that.isDeleting);cas
 
 
 class _PostDetailsState extends PostDetailsState {
-  const _PostDetailsState({this.post, this.status = Status.initial, this.errorMessage = '', this.isDeleting = false}): super._();
+  const _PostDetailsState({this.post, this.uiStatus = UiStatus.initial, this.errorMessage = '', this.isDeleting = false}): super._();
   
 
 @override final  Post? post;
-@override@JsonKey() final  Status status;
+@override@JsonKey() final  UiStatus uiStatus;
 @override@JsonKey() final  String errorMessage;
 @override@JsonKey() final  bool isDeleting;
 
@@ -227,16 +227,16 @@ _$PostDetailsStateCopyWith<_PostDetailsState> get copyWith => __$PostDetailsStat
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PostDetailsState&&(identical(other.post, post) || other.post == post)&&(identical(other.status, status) || other.status == status)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage)&&(identical(other.isDeleting, isDeleting) || other.isDeleting == isDeleting));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PostDetailsState&&(identical(other.post, post) || other.post == post)&&(identical(other.uiStatus, uiStatus) || other.uiStatus == uiStatus)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage)&&(identical(other.isDeleting, isDeleting) || other.isDeleting == isDeleting));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,post,status,errorMessage,isDeleting);
+int get hashCode => Object.hash(runtimeType,post,uiStatus,errorMessage,isDeleting);
 
 @override
 String toString() {
-  return 'PostDetailsState(post: $post, status: $status, errorMessage: $errorMessage, isDeleting: $isDeleting)';
+  return 'PostDetailsState(post: $post, uiStatus: $uiStatus, errorMessage: $errorMessage, isDeleting: $isDeleting)';
 }
 
 
@@ -247,7 +247,7 @@ abstract mixin class _$PostDetailsStateCopyWith<$Res> implements $PostDetailsSta
   factory _$PostDetailsStateCopyWith(_PostDetailsState value, $Res Function(_PostDetailsState) _then) = __$PostDetailsStateCopyWithImpl;
 @override @useResult
 $Res call({
- Post? post, Status status, String errorMessage, bool isDeleting
+ Post? post, UiStatus uiStatus, String errorMessage, bool isDeleting
 });
 
 
@@ -264,11 +264,11 @@ class __$PostDetailsStateCopyWithImpl<$Res>
 
 /// Create a copy of PostDetailsState
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? post = freezed,Object? status = null,Object? errorMessage = null,Object? isDeleting = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? post = freezed,Object? uiStatus = null,Object? errorMessage = null,Object? isDeleting = null,}) {
   return _then(_PostDetailsState(
 post: freezed == post ? _self.post : post // ignore: cast_nullable_to_non_nullable
-as Post?,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as Status,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
+as Post?,uiStatus: null == uiStatus ? _self.uiStatus : uiStatus // ignore: cast_nullable_to_non_nullable
+as UiStatus,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
 as String,isDeleting: null == isDeleting ? _self.isDeleting : isDeleting // ignore: cast_nullable_to_non_nullable
 as bool,
   ));

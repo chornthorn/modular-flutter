@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:modular_flutter/modular_flutter.dart';
 import 'package:viewmodel/viewmodel.dart';
-import '../providers/post_providers.dart';
-import '../states/post_details_state.dart';
+
+import '../viewmodels/post_detail/post_details_state.dart';
+import '../viewmodels/post_detail/post_details_viewmodel.dart';
 
 class PostDetailsScreen extends ConsumerWidget {
   final String postId;

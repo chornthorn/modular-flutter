@@ -13,8 +13,6 @@ import 'package:meta/meta.dart';
 /// class AppConfigImpl extends AppConfig {
 ///   AppConfigImpl({Map<String, bool>? featureFlags}) : super(featureFlags: featureFlags);
 ///
-///   @override
-///   Environment get environment => Environment.current;
 ///
 ///   @override
 ///   String get apiBaseUrl => getConfigValue('API_BASE_URL') ?? 'https://api.example.com';
@@ -22,6 +20,7 @@ import 'package:meta/meta.dart';
 /// ```
 abstract class AppConfig {
   final Map<String, bool> _featureFlags;
+  bool _isInitialized = false;
 
   /// Creates an AppConfig instance with optional feature flags
   AppConfig({Map<String, bool>? featureFlags})
@@ -31,16 +30,26 @@ abstract class AppConfig {
   ///
   /// Call this during app initialization to load the .env file.
   /// The file should be added to assets in pubspec.yaml.
-  Future<void> loadEnvVariables(String envFileName) async {
+  Future<void> loadEnvFilePath(String envFileName) async {
     try {
-      await dotenv.load(fileName: envFileName);
+      await _initialize(envFileName);
     } catch (e) {
       // Fallback to default .env file
       try {
-        await dotenv.load(fileName: '.env');
+        await _initialize('.env');
       } catch (e) {
         // Continue without env variables if file doesn't exist
       }
+    }
+  }
+
+  /// Initialize the app config
+  Future<void> _initialize(String envFileName) async {
+    if (_isInitialized) return;
+    await dotenv.load(fileName: envFileName);
+
+    if (dotenv.isInitialized) {
+      _isInitialized = true;
     }
   }
 
@@ -85,11 +94,12 @@ abstract class AppConfig {
   }
 
   /// Get all loaded environment variables
-  Map<String, String> get envVariables => Map.unmodifiable(dotenv.env);
-
-  /// Load test environment variables (for testing)
-  void loadTestEnvironment(String envContent) {
-    dotenv.testLoad(fileInput: envContent);
+  // Map<String, String> get envVariables => Map.unmodifiable(dotenv.env);
+  Map<String, String> get envVariables {
+    if (_isInitialized) {
+      return Map.unmodifiable(dotenv.env);
+    }
+    return {};
   }
 
   /// Helper method to parse boolean values

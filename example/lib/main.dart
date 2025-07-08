@@ -6,17 +6,17 @@ import 'modules/post/post_module.dart';
 
 class DefaultAppConfig extends AppConfig {
   @override
-  String get apiBaseUrl => 'https://api.khode.com';
+  String get apiBaseUrl {
+    return getConfigValue<String>('API_BASE_URL') ?? "https://api.khode.com";
+  }
 
   @override
-  String get appName => 'Khode App';
+  String get appName {
+    return getConfigValue<String>('APP_NAME') ?? "Khode App";
+  }
 
   @override
   bool get isDebugMode => true;
-
-  @override
-  String toString() =>
-      'DefaultAppConfig(appName: $appName, apiBaseUrl: $apiBaseUrl, isDebugMode: $isDebugMode)';
 }
 
 void main() async {
@@ -24,17 +24,12 @@ void main() async {
 
   // Register dependencies that required before app start
   await Modular.register((locator) async {
-    locator.registerLazySingleton<AppConfig>(() => DefaultAppConfig());
+    final appConfig = DefaultAppConfig();
+    await appConfig.loadEnvFilePath('.env');
+    locator.registerLazySingleton<AppConfig>(() => appConfig);
   });
 
-  runApp(
-    ProviderScope(
-      child: ModularApp(
-        modules: [AppModule(), PostModule()],
-        child: const ExampleApp(),
-      ),
-    ),
-  );
+  runApp(const ExampleApp());
 }
 
 class ExampleApp extends StatelessWidget {
@@ -42,7 +37,16 @@ class ExampleApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(routerConfig: Modular.routerConfig);
+    return ProviderScope(
+      child: ModularApp(
+        modules: [AppModule(), PostModule()],
+        child: Builder(
+          builder: (context) {
+            return MaterialApp.router(routerConfig: Modular.routerConfig);
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -52,7 +56,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Home')),
+      appBar: AppBar(title: Text(serviceLocator.get<AppConfig>().appName)),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -72,7 +76,7 @@ class HomeScreen extends StatelessWidget {
             const SizedBox(height: 20),
             ElevatedButton.icon(
               onPressed: () {
-                context.go('/posts');
+                context.push('/posts');
               },
               icon: const Icon(Icons.post_add),
               label: const Text('Posts Module'),

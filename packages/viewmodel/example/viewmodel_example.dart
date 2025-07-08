@@ -6,23 +6,24 @@ part 'viewmodel_example.freezed.dart';
 
 // Example 1: Simple Counter State with Freezed
 @freezed
-class CounterUiState extends UiState<CounterUiState> with _$CounterUiState {
+abstract class CounterUiState extends UiState<CounterUiState>
+    with _$CounterUiState {
   const CounterUiState._();
 
   const factory CounterUiState({
     required int value,
-    @Default(Status.initial) Status status,
+    @Default(UiStatus.initial) UiStatus uiStatus,
     String? message,
     String? errorMessage,
   }) = _CounterUiState;
 
   @override
-  CounterUiState get loading => copyWith(status: Status.loading);
+  CounterUiState get loading => copyWith(uiStatus: UiStatus.loading);
 }
 
 // Example 2: Complex User Profile State
 @freezed
-class UserProfileUiState extends UiState<UserProfileUiState>
+abstract class UserProfileUiState extends UiState<UserProfileUiState>
     with _$UserProfileUiState {
   const UserProfileUiState._();
 
@@ -31,13 +32,13 @@ class UserProfileUiState extends UiState<UserProfileUiState>
     String? email,
     @Default([]) List<String> posts,
     @Default(false) bool isRefreshing,
-    @Default(Status.initial) Status status,
+    @Default(UiStatus.initial) UiStatus uiStatus,
     String? message,
     String? errorMessage,
   }) = _UserProfileUiState;
 
   @override
-  UserProfileUiState get loading => copyWith(status: Status.loading);
+  UserProfileUiState get loading => copyWith(uiStatus: UiStatus.loading);
 }
 
 // Counter ViewModel
@@ -52,7 +53,7 @@ class CounterViewModel extends ViewModel<CounterUiState> {
   void increment() {
     state = state.copyWith(
       value: state.value + 1,
-      status: Status.success,
+      uiStatus: UiStatus.success,
       message: 'Incremented to ${state.value + 1}',
     );
   }
@@ -60,7 +61,7 @@ class CounterViewModel extends ViewModel<CounterUiState> {
   void decrement() {
     state = state.copyWith(
       value: state.value - 1,
-      status: Status.success,
+      uiStatus: UiStatus.success,
       message: 'Decremented to ${state.value - 1}',
     );
   }
@@ -73,7 +74,7 @@ class CounterViewModel extends ViewModel<CounterUiState> {
 
     state = state.copyWith(
       value: 0,
-      status: Status.success,
+      uiStatus: UiStatus.success,
       message: 'Counter reset successfully',
     );
   }
@@ -99,12 +100,12 @@ class UserProfileViewModel extends ViewModel<UserProfileUiState> {
         userName: 'John Doe',
         email: 'john.doe@example.com',
         posts: ['Post 1', 'Post 2', 'Post 3'],
-        status: Status.success,
+        uiStatus: UiStatus.success,
         message: 'Profile loaded successfully',
       );
     } catch (error) {
       state = state.copyWith(
-        status: Status.error,
+        uiStatus: UiStatus.error,
         errorMessage: 'Failed to load profile: $error',
       );
     }
@@ -120,13 +121,13 @@ class UserProfileViewModel extends ViewModel<UserProfileUiState> {
       state = state.copyWith(
         posts: [...state.posts, 'New Post ${state.posts.length + 1}'],
         isRefreshing: false,
-        status: Status.success,
+        uiStatus: UiStatus.success,
         message: 'Profile refreshed',
       );
     } catch (error) {
       state = state.copyWith(
         isRefreshing: false,
-        status: Status.error,
+        uiStatus: UiStatus.error,
         errorMessage: 'Failed to refresh: $error',
       );
     }

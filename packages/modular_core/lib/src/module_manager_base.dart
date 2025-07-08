@@ -1,10 +1,10 @@
-import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
-import 'result.dart';
 import 'app_config.dart';
 import 'module_base.dart';
 import 'module_registry.dart';
+import 'result.dart';
+import 'service_locator.dart';
 
 /// Base class for module managers providing centralized module management
 ///

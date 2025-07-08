@@ -7,7 +7,7 @@ import 'package:viewmodel/viewmodel.dart';
 class TestUiState extends UiState<TestUiState> {
   final int counter;
   @override
-  final Status status;
+  final UiStatus uiStatus;
   @override
   final String? message;
   @override
@@ -15,23 +15,23 @@ class TestUiState extends UiState<TestUiState> {
 
   const TestUiState({
     this.counter = 0,
-    this.status = Status.initial,
+    this.uiStatus = UiStatus.initial,
     this.message,
     this.errorMessage,
   });
 
   @override
-  TestUiState get loading => copyWith(status: Status.loading);
+  TestUiState get loading => copyWith(uiStatus: UiStatus.loading);
 
   TestUiState copyWith({
     int? counter,
-    Status? status,
+    UiStatus? uiStatus,
     String? message,
     String? errorMessage,
   }) {
     return TestUiState(
       counter: counter ?? this.counter,
-      status: status ?? this.status,
+      uiStatus: uiStatus ?? this.uiStatus,
       message: message ?? this.message,
       errorMessage: errorMessage ?? this.errorMessage,
     );
@@ -42,13 +42,13 @@ class TestUiState extends UiState<TestUiState> {
     if (identical(this, other)) return true;
     return other is TestUiState &&
         other.counter == counter &&
-        other.status == status &&
+        other.uiStatus == uiStatus &&
         other.message == message &&
         other.errorMessage == errorMessage;
   }
 
   @override
-  int get hashCode => Object.hash(counter, status, message, errorMessage);
+  int get hashCode => Object.hash(counter, uiStatus, message, errorMessage);
 }
 
 // Test ViewModel implementation
@@ -68,7 +68,7 @@ class TestViewModel extends ViewModel<TestUiState> {
   void increment() {
     state = state.copyWith(
       counter: state.counter + 1,
-      status: Status.success,
+      uiStatus: UiStatus.success,
       message: 'Incremented to ${state.counter + 1}',
     );
   }
@@ -76,7 +76,7 @@ class TestViewModel extends ViewModel<TestUiState> {
   void decrement() {
     state = state.copyWith(
       counter: state.counter - 1,
-      status: Status.success,
+      uiStatus: UiStatus.success,
       message: 'Decremented to ${state.counter - 1}',
     );
   }
@@ -89,13 +89,13 @@ class TestViewModel extends ViewModel<TestUiState> {
 
     state = state.copyWith(
       counter: state.counter + 1,
-      status: Status.success,
+      uiStatus: UiStatus.success,
       message: 'Async increment completed',
     );
   }
 
   void setError(String error) {
-    state = state.copyWith(status: Status.error, errorMessage: error);
+    state = state.copyWith(uiStatus: UiStatus.error, errorMessage: error);
   }
 
   void reset() {
@@ -117,13 +117,16 @@ void main() {
 
     group('initialization', () {
       test('should initialize with provided initial state', () {
-        const initialState = TestUiState(counter: 5, status: Status.success);
+        const initialState = TestUiState(
+          counter: 5,
+          uiStatus: UiStatus.success,
+        );
         final vm = TestViewModel(initialState);
 
         expect(vm.state.counter, 5);
-        expect(vm.state.status, Status.success);
+        expect(vm.state.uiStatus, UiStatus.success);
         expect(vm.uiState.counter, 5);
-        expect(vm.uiState.status, Status.success);
+        expect(vm.uiState.uiStatus, UiStatus.success);
 
         vm.dispose();
       });
@@ -152,13 +155,13 @@ void main() {
       test('should provide access to state via state property', () {
         expect(viewModel.state, isA<TestUiState>());
         expect(viewModel.state.counter, 0);
-        expect(viewModel.state.status, Status.initial);
+        expect(viewModel.state.uiStatus, UiStatus.initial);
       });
 
       test('should provide access to state via uiState property', () {
         expect(viewModel.uiState, isA<TestUiState>());
         expect(viewModel.uiState.counter, 0);
-        expect(viewModel.uiState.status, Status.initial);
+        expect(viewModel.uiState.uiStatus, UiStatus.initial);
         expect(viewModel.uiState, equals(viewModel.state));
       });
 
@@ -168,7 +171,7 @@ void main() {
         viewModel.increment();
 
         expect(viewModel.state.counter, 1);
-        expect(viewModel.state.status, Status.success);
+        expect(viewModel.state.uiStatus, UiStatus.success);
         expect(viewModel.state.message, 'Incremented to 1');
       });
 
@@ -221,17 +224,17 @@ void main() {
 
     group('async operations', () {
       test('should handle async state changes', () async {
-        expect(viewModel.state.status, Status.initial);
+        expect(viewModel.state.uiStatus, UiStatus.initial);
 
         final future = viewModel.incrementAsync();
 
         // Should be loading during async operation
-        expect(viewModel.state.status, Status.loading);
+        expect(viewModel.state.uiStatus, UiStatus.loading);
 
         await future;
 
         // Should be success after completion
-        expect(viewModel.state.status, Status.success);
+        expect(viewModel.state.uiStatus, UiStatus.success);
         expect(viewModel.state.counter, 1);
         expect(viewModel.state.message, 'Async increment completed');
       });
@@ -241,7 +244,7 @@ void main() {
       test('should handle error states', () {
         viewModel.setError('Something went wrong');
 
-        expect(viewModel.state.status, Status.error);
+        expect(viewModel.state.uiStatus, UiStatus.error);
         expect(viewModel.state.errorMessage, 'Something went wrong');
       });
     });
@@ -255,7 +258,7 @@ void main() {
         viewModel.reset();
 
         expect(viewModel.state.counter, 0);
-        expect(viewModel.state.status, Status.initial);
+        expect(viewModel.state.uiStatus, UiStatus.initial);
         expect(viewModel.state.message, isNull);
         expect(viewModel.state.errorMessage, isNull);
       });

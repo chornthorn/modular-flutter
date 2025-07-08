@@ -1,6 +1,8 @@
+import 'package:modular_flutter/modular_flutter.dart';
 import 'package:viewmodel/viewmodel.dart';
-import '../repositories/post_repository.dart';
-import '../states/post_details_state.dart';
+
+import '../../repositories/post_repository.dart';
+import 'post_details_state.dart';
 
 /// ViewModel for the post details screen
 class PostDetailsViewModel extends ViewModel<PostDetailsState> {
@@ -46,3 +48,12 @@ class PostDetailsViewModel extends ViewModel<PostDetailsState> {
     }
   }
 }
+
+final postDetailsViewModelProvider =
+    StateNotifierProvider.family<PostDetailsViewModel, PostDetailsState, int>((
+      ref,
+      postId,
+    ) {
+      final repository = serviceLocator.get<PostRepository>();
+      return PostDetailsViewModel(repository, postId);
+    });

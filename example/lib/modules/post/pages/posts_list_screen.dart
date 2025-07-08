@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:modular_flutter/modular_flutter.dart';
 import 'package:viewmodel/viewmodel.dart';
-import '../providers/post_providers.dart';
-import '../states/posts_list_state.dart';
+
+import '../viewmodels/post_list/posts_list_state.dart';
+import '../viewmodels/post_list/posts_list_viewmodel.dart';
 
 class PostsListScreen extends ConsumerWidget {
   const PostsListScreen({super.key});

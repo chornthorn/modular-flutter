@@ -14,7 +14,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PostsListState {
 
- List<Post> get posts; Status get status; String get errorMessage;
+ List<Post> get posts; UiStatus get uiStatus; String get errorMessage;
 /// Create a copy of PostsListState
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -25,16 +25,16 @@ $PostsListStateCopyWith<PostsListState> get copyWith => _$PostsListStateCopyWith
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PostsListState&&const DeepCollectionEquality().equals(other.posts, posts)&&(identical(other.status, status) || other.status == status)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PostsListState&&const DeepCollectionEquality().equals(other.posts, posts)&&(identical(other.uiStatus, uiStatus) || other.uiStatus == uiStatus)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(posts),status,errorMessage);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(posts),uiStatus,errorMessage);
 
 @override
 String toString() {
-  return 'PostsListState(posts: $posts, status: $status, errorMessage: $errorMessage)';
+  return 'PostsListState(posts: $posts, uiStatus: $uiStatus, errorMessage: $errorMessage)';
 }
 
 
@@ -45,7 +45,7 @@ abstract mixin class $PostsListStateCopyWith<$Res>  {
   factory $PostsListStateCopyWith(PostsListState value, $Res Function(PostsListState) _then) = _$PostsListStateCopyWithImpl;
 @useResult
 $Res call({
- List<Post> posts, Status status, String errorMessage
+ List<Post> posts, UiStatus uiStatus, String errorMessage
 });
 
 
@@ -62,11 +62,11 @@ class _$PostsListStateCopyWithImpl<$Res>
 
 /// Create a copy of PostsListState
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? posts = null,Object? status = null,Object? errorMessage = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? posts = null,Object? uiStatus = null,Object? errorMessage = null,}) {
   return _then(_self.copyWith(
 posts: null == posts ? _self.posts : posts // ignore: cast_nullable_to_non_nullable
-as List<Post>,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as Status,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
+as List<Post>,uiStatus: null == uiStatus ? _self.uiStatus : uiStatus // ignore: cast_nullable_to_non_nullable
+as UiStatus,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }
@@ -152,10 +152,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<Post> posts,  Status status,  String errorMessage)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<Post> posts,  UiStatus uiStatus,  String errorMessage)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PostsListState() when $default != null:
-return $default(_that.posts,_that.status,_that.errorMessage);case _:
+return $default(_that.posts,_that.uiStatus,_that.errorMessage);case _:
   return orElse();
 
 }
@@ -173,10 +173,10 @@ return $default(_that.posts,_that.status,_that.errorMessage);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<Post> posts,  Status status,  String errorMessage)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<Post> posts,  UiStatus uiStatus,  String errorMessage)  $default,) {final _that = this;
 switch (_that) {
 case _PostsListState():
-return $default(_that.posts,_that.status,_that.errorMessage);case _:
+return $default(_that.posts,_that.uiStatus,_that.errorMessage);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -193,10 +193,10 @@ return $default(_that.posts,_that.status,_that.errorMessage);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<Post> posts,  Status status,  String errorMessage)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<Post> posts,  UiStatus uiStatus,  String errorMessage)?  $default,) {final _that = this;
 switch (_that) {
 case _PostsListState() when $default != null:
-return $default(_that.posts,_that.status,_that.errorMessage);case _:
+return $default(_that.posts,_that.uiStatus,_that.errorMessage);case _:
   return null;
 
 }
@@ -208,7 +208,7 @@ return $default(_that.posts,_that.status,_that.errorMessage);case _:
 
 
 class _PostsListState extends PostsListState {
-  const _PostsListState({final  List<Post> posts = const [], this.status = Status.initial, this.errorMessage = ''}): _posts = posts,super._();
+  const _PostsListState({final  List<Post> posts = const [], this.uiStatus = UiStatus.initial, this.errorMessage = ''}): _posts = posts,super._();
   
 
  final  List<Post> _posts;
@@ -218,7 +218,7 @@ class _PostsListState extends PostsListState {
   return EqualUnmodifiableListView(_posts);
 }
 
-@override@JsonKey() final  Status status;
+@override@JsonKey() final  UiStatus uiStatus;
 @override@JsonKey() final  String errorMessage;
 
 /// Create a copy of PostsListState
@@ -231,16 +231,16 @@ _$PostsListStateCopyWith<_PostsListState> get copyWith => __$PostsListStateCopyW
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PostsListState&&const DeepCollectionEquality().equals(other._posts, _posts)&&(identical(other.status, status) || other.status == status)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PostsListState&&const DeepCollectionEquality().equals(other._posts, _posts)&&(identical(other.uiStatus, uiStatus) || other.uiStatus == uiStatus)&&(identical(other.errorMessage, errorMessage) || other.errorMessage == errorMessage));
 }
 
 
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_posts),status,errorMessage);
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_posts),uiStatus,errorMessage);
 
 @override
 String toString() {
-  return 'PostsListState(posts: $posts, status: $status, errorMessage: $errorMessage)';
+  return 'PostsListState(posts: $posts, uiStatus: $uiStatus, errorMessage: $errorMessage)';
 }
 
 
@@ -251,7 +251,7 @@ abstract mixin class _$PostsListStateCopyWith<$Res> implements $PostsListStateCo
   factory _$PostsListStateCopyWith(_PostsListState value, $Res Function(_PostsListState) _then) = __$PostsListStateCopyWithImpl;
 @override @useResult
 $Res call({
- List<Post> posts, Status status, String errorMessage
+ List<Post> posts, UiStatus uiStatus, String errorMessage
 });
 
 
@@ -268,11 +268,11 @@ class __$PostsListStateCopyWithImpl<$Res>
 
 /// Create a copy of PostsListState
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? posts = null,Object? status = null,Object? errorMessage = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? posts = null,Object? uiStatus = null,Object? errorMessage = null,}) {
   return _then(_PostsListState(
 posts: null == posts ? _self._posts : posts // ignore: cast_nullable_to_non_nullable
-as List<Post>,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as Status,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
+as List<Post>,uiStatus: null == uiStatus ? _self.uiStatus : uiStatus // ignore: cast_nullable_to_non_nullable
+as UiStatus,errorMessage: null == errorMessage ? _self.errorMessage : errorMessage // ignore: cast_nullable_to_non_nullable
 as String,
   ));
 }

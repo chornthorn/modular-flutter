@@ -3,8 +3,6 @@ title: ViewModel Package
 description: State management solution for modular Flutter applications
 ---
 
-# ViewModel Package
-
 The `viewmodel` package provides a comprehensive state management solution built on top of Riverpod. It implements the ViewModel pattern with type-safe state management, lifecycle handling, and seamless Flutter integration.
 
 ## Overview
@@ -44,12 +42,18 @@ abstract class ViewModel<State extends UiState> extends StateNotifier<State> {
 
 ### 2. UI State Interface
 
-All states must implement the `UiState` interface:
+All states must extend the `UiState` abstract class:
 
 ```dart
-abstract class UiState {
-  UiStatus get status;
-  String? get errorMessage;
+abstract class UiState<T> {
+  UiStatus get uiStatus;
+  const UiState();
+  T get loading;
+
+  bool get isInitial => uiStatus == UiStatus.initial;
+  bool get isLoading => uiStatus == UiStatus.loading;
+  bool get isSuccess => uiStatus == UiStatus.success;
+  bool get isError => uiStatus == UiStatus.error;
 }
 ```
 
@@ -71,10 +75,19 @@ enum UiStatus {
 Monitor ViewModel state changes for debugging and analytics:
 
 ```dart
-class ViewModelObserver extends StateNotifier {
-  void onStateChange(String viewModelName, UiState oldState, UiState newState);
-  void onError(String viewModelName, Object error, StackTrace stackTrace);
-  void onDispose(String viewModelName);
+class ViewModelObserver extends ProviderObserver {
+  ViewModelObserver({
+    this.logStateChanges = kDebugMode,
+    this.logErrors = true,
+    this.logProviderLifecycle = false,
+    this.verbose = false,
+    Logger? logger,
+  });
+
+  final bool logStateChanges;
+  final bool logErrors;
+  final bool logProviderLifecycle;
+  final bool verbose;
 }
 ```
 
@@ -83,62 +96,58 @@ class ViewModelObserver extends StateNotifier {
 ### Creating a ViewModel
 
 ```dart
-// 1. Define the state
+// 1. Define the state with Freezed
 @freezed
-class UserProfileState with _$UserProfileState implements UiState {
-  const factory UserProfileState({
-    @Default(UiStatus.initial) UiStatus status,
-    User? user,
+class CounterUiState extends UiState<CounterUiState> with _$CounterUiState {
+  const CounterUiState._();
+
+  const factory CounterUiState({
+    required int value,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    String? message,
     String? errorMessage,
-  }) = _UserProfileState;
+  }) = _CounterUiState;
 
-  const UserProfileState._();
-
-  // Helper methods for state transitions
-  UserProfileState get loading => copyWith(status: UiStatus.loading);
-
-  UserProfileState success(User user) => copyWith(
-    status: UiStatus.success,
-    user: user,
-    errorMessage: null,
-  );
-
-  UserProfileState error(String message) => copyWith(
-    status: UiStatus.error,
-    errorMessage: message,
-  );
+  @override
+  CounterUiState get loading => copyWith(uiStatus: UiStatus.loading);
 }
 
 // 2. Implement the ViewModel
-class UserProfileViewModel extends ViewModel<UserProfileState> {
-  final UserRepository _userRepository;
-
-  UserProfileViewModel(this._userRepository)
-      : super(const UserProfileState());
+class CounterViewModel extends ViewModel<CounterUiState> {
+  CounterViewModel() : super(const CounterUiState(value: 0));
 
   @override
   Future<void> onInit() async {
-    await loadUserProfile();
+    print('CounterViewModel initialized');
   }
 
-  Future<void> loadUserProfile() async {
-    try {
-      state = state.loading;
-      final user = await _userRepository.getCurrentUser();
-      state = state.success(user);
-    } catch (e) {
-      state = state.error(e.toString());
-    }
+  void increment() {
+    state = state.copyWith(
+      value: state.value + 1,
+      uiStatus: UiStatus.success,
+      message: 'Incremented to ${state.value + 1}',
+    );
   }
 
-  Future<void> updateProfile(UserUpdateRequest request) async {
-    try {
-      state = state.loading;
-      final updatedUser = await _userRepository.updateUser(request);
-      state = state.success(updatedUser);
-    } catch (e) {
-      state = state.error('Failed to update profile: ${e.toString()}');
-    }
+  void decrement() {
+    state = state.copyWith(
+      value: state.value - 1,
+      uiStatus: UiStatus.success,
+      message: 'Decremented to ${state.value - 1}',
+    );
+  }
+
+  Future<void> reset() async {
+    state = state.loading;
+
+    // Simulate async operation
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    state = state.copyWith(
+      value: 0,
+      uiStatus: UiStatus.success,
+      message: 'Counter reset successfully',
+    );
   }
 }
 ```
@@ -147,48 +156,87 @@ class UserProfileViewModel extends ViewModel<UserProfileState> {
 
 ```dart
 // Provider definition
-final userProfileViewModelProvider =
-    StateNotifierProvider<UserProfileViewModel, UserProfileState>((ref) {
-  final repository = GetIt.instance<UserRepository>();
-  return UserProfileViewModel(repository);
-});
+final counterViewModelProvider =
+    StateNotifierProvider<CounterViewModel, CounterUiState>(
+      (ref) => CounterViewModel(),
+    );
 
 // Usage in widgets
-class UserProfileScreen extends ConsumerWidget {
-  const UserProfileScreen({super.key});
+class CounterScreen extends ConsumerWidget {
+  const CounterScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(userProfileViewModelProvider);
-    final viewModel = ref.read(userProfileViewModelProvider.notifier);
+    final state = ref.watch(counterViewModelProvider);
+    final viewModel = ref.read(counterViewModelProvider.notifier);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: const Text('Counter')),
       body: _buildBody(context, state, viewModel),
     );
   }
 
   Widget _buildBody(
     BuildContext context,
-    UserProfileState state,
-    UserProfileViewModel viewModel,
+    CounterUiState state,
+    CounterViewModel viewModel,
   ) {
-    return switch (state.status) {
-      UiStatus.initial || UiStatus.loading =>
-        const Center(child: CircularProgressIndicator()),
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (state.isLoading)
+            const CircularProgressIndicator()
+          else
+            Text(
+              '${state.value}',
+              style: Theme.of(context).textTheme.headlineLarge,
+            ),
 
-      UiStatus.success =>
-        UserProfileContent(
-          user: state.user!,
-          onUpdate: viewModel.updateProfile,
-        ),
+          if (state.message != null)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                state.message!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+            ),
 
-      UiStatus.error =>
-        ErrorView(
-          message: state.errorMessage!,
-          onRetry: viewModel.loadUserProfile,
-        ),
-    };
+          if (state.errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Text(
+                state.errorMessage!,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              ElevatedButton(
+                onPressed: viewModel.decrement,
+                child: const Text('-'),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton(
+                onPressed: viewModel.increment,
+                child: const Text('+'),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton(
+                onPressed: viewModel.reset,
+                child: const Text('Reset'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 ```
@@ -199,45 +247,74 @@ class UserProfileScreen extends ConsumerWidget {
 
 ```dart
 @freezed
-class PostsListState with _$PostsListState implements UiState {
-  const factory PostsListState({
-    @Default(UiStatus.initial) UiStatus status,
-    @Default([]) List<Post> posts,
-    @Default([]) List<Post> selectedPosts,
-    @Default(false) bool isSelectionMode,
-    @Default(1) int currentPage,
-    @Default(false) bool hasMoreData,
+class UserProfileUiState extends UiState<UserProfileUiState>
+    with _$UserProfileUiState {
+  const UserProfileUiState._();
+
+  const factory UserProfileUiState({
+    String? userName,
+    String? email,
+    @Default([]) List<String> posts,
+    @Default(false) bool isRefreshing,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    String? message,
     String? errorMessage,
-    String? searchQuery,
-  }) = _PostsListState;
+  }) = _UserProfileUiState;
 
-  const PostsListState._();
+  @override
+  UserProfileUiState get loading => copyWith(uiStatus: UiStatus.loading);
+}
 
-  // State transition helpers
-  PostsListState get loading => copyWith(status: UiStatus.loading);
+class UserProfileViewModel extends ViewModel<UserProfileUiState> {
+  UserProfileViewModel() : super(const UserProfileUiState());
 
-  PostsListState withPosts(List<Post> posts) => copyWith(
-    status: UiStatus.success,
-    posts: posts,
-    errorMessage: null,
-  );
+  @override
+  Future<void> onInit() async {
+    await loadUserProfile();
+  }
 
-  PostsListState appendPosts(List<Post> newPosts) => copyWith(
-    posts: [...posts, ...newPosts],
-    currentPage: currentPage + 1,
-    hasMoreData: newPosts.isNotEmpty,
-  );
+  Future<void> loadUserProfile() async {
+    state = state.loading;
 
-  PostsListState toggleSelection(Post post) {
-    final isSelected = selectedPosts.contains(post);
-    final updatedSelection = isSelected
-        ? selectedPosts.where((p) => p.id != post.id).toList()
-        : [...selectedPosts, post];
+    try {
+      // Simulate API call
+      await Future.delayed(const Duration(seconds: 1));
 
-    return copyWith(
-      selectedPosts: updatedSelection,
-      isSelectionMode: updatedSelection.isNotEmpty,
-    );
+      state = state.copyWith(
+        userName: 'John Doe',
+        email: 'john.doe@example.com',
+        posts: ['Post 1', 'Post 2', 'Post 3'],
+        uiStatus: UiStatus.success,
+        message: 'Profile loaded successfully',
+      );
+    } catch (error) {
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'Failed to load profile: $error',
+      );
+    }
+  }
+
+  Future<void> refreshProfile() async {
+    state = state.copyWith(isRefreshing: true);
+
+    try {
+      // Simulate refresh
+      await Future.delayed(const Duration(milliseconds: 800));
+
+      state = state.copyWith(
+        posts: [...state.posts, 'New Post ${state.posts.length + 1}'],
+        isRefreshing: false,
+        uiStatus: UiStatus.success,
+        message: 'Profile refreshed',
+      );
+    } catch (error) {
+      state = state.copyWith(
+        isRefreshing: false,
+        uiStatus: UiStatus.error,
+        errorMessage: 'Failed to refresh: $error',
+      );
+    }
   }
 }
 ```
@@ -246,37 +323,29 @@ class PostsListState with _$PostsListState implements UiState {
 
 ```dart
 @freezed
-class LoginFormState with _$LoginFormState implements UiState {
+class LoginFormState extends UiState<LoginFormState> with _$LoginFormState {
+  const LoginFormState._();
+
   const factory LoginFormState({
-    @Default(UiStatus.initial) UiStatus status,
     @Default('') String email,
     @Default('') String password,
     @Default(false) bool isPasswordVisible,
     @Default(false) bool rememberMe,
+    @Default(UiStatus.initial) UiStatus uiStatus,
     String? emailError,
     String? passwordError,
+    String? message,
     String? errorMessage,
   }) = _LoginFormState;
 
-  const LoginFormState._();
+  @override
+  LoginFormState get loading => copyWith(uiStatus: UiStatus.loading);
 
   bool get isValid =>
       emailError == null &&
       passwordError == null &&
       email.isNotEmpty &&
       password.isNotEmpty;
-
-  LoginFormState get loading => copyWith(status: UiStatus.loading);
-
-  LoginFormState success() => copyWith(
-    status: UiStatus.success,
-    errorMessage: null,
-  );
-
-  LoginFormState error(String message) => copyWith(
-    status: UiStatus.error,
-    errorMessage: message,
-  );
 }
 
 class LoginFormViewModel extends ViewModel<LoginFormState> {
@@ -312,9 +381,15 @@ class LoginFormViewModel extends ViewModel<LoginFormState> {
     try {
       state = state.loading;
       await _authRepository.login(state.email, state.password);
-      state = state.success();
+      state = state.copyWith(
+        uiStatus: UiStatus.success,
+        message: 'Login successful',
+      );
     } catch (e) {
-      state = state.error(e.toString());
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -335,13 +410,32 @@ class LoginFormViewModel extends ViewModel<LoginFormState> {
 ### 3. Pagination ViewModels
 
 ```dart
+@freezed
+class PaginatedListState<T> extends UiState<PaginatedListState<T>>
+    with _$PaginatedListState<T> {
+  const PaginatedListState._();
+
+  const factory PaginatedListState({
+    @Default([]) List<T> items,
+    @Default(1) int currentPage,
+    @Default(false) bool hasMoreData,
+    @Default(false) bool isLoadingMore,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    String? message,
+    String? errorMessage,
+  }) = _PaginatedListState<T>;
+
+  @override
+  PaginatedListState<T> get loading => copyWith(uiStatus: UiStatus.loading);
+}
+
 class PaginatedListViewModel<T> extends ViewModel<PaginatedListState<T>> {
   final Future<List<T>> Function(int page, int limit) _fetchData;
   final int _pageSize;
 
   PaginatedListViewModel(this._fetchData, {int pageSize = 20})
       : _pageSize = pageSize,
-        super(PaginatedListState<T>());
+        super(const PaginatedListState<Never>() as PaginatedListState<T>);
 
   @override
   Future<void> onInit() async {
@@ -352,21 +446,41 @@ class PaginatedListViewModel<T> extends ViewModel<PaginatedListState<T>> {
     try {
       state = state.loading;
       final items = await _fetchData(1, _pageSize);
-      state = state.withItems(items, hasMore: items.length == _pageSize);
+      state = state.copyWith(
+        items: items,
+        currentPage: 1,
+        hasMoreData: items.length == _pageSize,
+        uiStatus: UiStatus.success,
+      );
     } catch (e) {
-      state = state.error(e.toString());
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
   Future<void> loadNextPage() async {
-    if (!state.hasMoreData || state.status == UiStatus.loading) return;
+    if (!state.hasMoreData || state.isLoadingMore) return;
 
     try {
+      state = state.copyWith(isLoadingMore: true);
       final nextPage = state.currentPage + 1;
       final items = await _fetchData(nextPage, _pageSize);
-      state = state.appendItems(items, hasMore: items.length == _pageSize);
+
+      state = state.copyWith(
+        items: [...state.items, ...items],
+        currentPage: nextPage,
+        hasMoreData: items.length == _pageSize,
+        isLoadingMore: false,
+        uiStatus: UiStatus.success,
+      );
     } catch (e) {
-      state = state.error(e.toString());
+      state = state.copyWith(
+        isLoadingMore: false,
+        uiStatus: UiStatus.error,
+        errorMessage: e.toString(),
+      );
     }
   }
 
@@ -382,57 +496,44 @@ class PaginatedListViewModel<T> extends ViewModel<PaginatedListState<T>> {
 
 ```dart
 void main() {
-  group('UserProfileViewModel', () {
-    late MockUserRepository mockRepository;
-    late UserProfileViewModel viewModel;
+  group('CounterViewModel', () {
+    late CounterViewModel viewModel;
 
     setUp(() {
-      mockRepository = MockUserRepository();
-      viewModel = UserProfileViewModel(mockRepository);
+      viewModel = CounterViewModel();
     });
 
-    test('should load user profile on init', () async {
-      // Arrange
-      final user = User(id: 1, name: 'John Doe', email: 'john@example.com');
-      when(mockRepository.getCurrentUser()).thenAnswer((_) async => user);
-
-      // Act
-      await viewModel.onInit();
-
-      // Assert
-      expect(viewModel.state.status, UiStatus.success);
-      expect(viewModel.state.user, user);
-      expect(viewModel.state.errorMessage, isNull);
+    tearDown(() {
+      viewModel.dispose();
     });
 
-    test('should handle errors gracefully', () async {
-      // Arrange
-      when(mockRepository.getCurrentUser())
-          .thenThrow(Exception('Network error'));
-
-      // Act
-      await viewModel.loadUserProfile();
-
-      // Assert
-      expect(viewModel.state.status, UiStatus.error);
-      expect(viewModel.state.errorMessage, contains('Network error'));
-      expect(viewModel.state.user, isNull);
+    test('should initialize with correct initial state', () {
+      expect(viewModel.state.value, 0);
+      expect(viewModel.state.uiStatus, UiStatus.initial);
     });
 
-    test('should update profile successfully', () async {
-      // Arrange
-      final request = UserUpdateRequest(name: 'Jane Doe');
-      final updatedUser = User(id: 1, name: 'Jane Doe', email: 'jane@example.com');
-      when(mockRepository.updateUser(request))
-          .thenAnswer((_) async => updatedUser);
+    test('should increment value correctly', () {
+      viewModel.increment();
 
-      // Act
-      await viewModel.updateProfile(request);
+      expect(viewModel.state.value, 1);
+      expect(viewModel.state.uiStatus, UiStatus.success);
+      expect(viewModel.state.message, 'Incremented to 1');
+    });
 
-      // Assert
-      expect(viewModel.state.status, UiStatus.success);
-      expect(viewModel.state.user, updatedUser);
-      verify(mockRepository.updateUser(request)).called(1);
+    test('should handle reset operation', () async {
+      viewModel.increment();
+      expect(viewModel.state.value, 1);
+
+      await viewModel.reset();
+
+      expect(viewModel.state.value, 0);
+      expect(viewModel.state.uiStatus, UiStatus.success);
+      expect(viewModel.state.message, 'Counter reset successfully');
+    });
+
+    test('should call onInit during construction', () {
+      // onInit is called automatically in constructor
+      expect(viewModel.state.uiStatus, UiStatus.initial);
     });
   });
 }
@@ -442,48 +543,40 @@ void main() {
 
 ```dart
 void main() {
-  group('UserProfileScreen', () {
-    testWidgets('should display user profile when loaded', (tester) async {
-      // Arrange
-      final user = User(id: 1, name: 'John Doe', email: 'john@example.com');
-      final mockViewModel = MockUserProfileViewModel();
-      when(mockViewModel.state).thenReturn(
-        UserProfileState(status: UiStatus.success, user: user),
-      );
-
-      // Act
+  group('CounterScreen', () {
+    testWidgets('should display counter value', (tester) async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            userProfileViewModelProvider.overrideWith((ref) => mockViewModel),
-          ],
-          child: const MaterialApp(home: UserProfileScreen()),
+          child: MaterialApp(home: CounterScreen()),
         ),
       );
 
-      // Assert
-      expect(find.text('John Doe'), findsOneWidget);
-      expect(find.text('john@example.com'), findsOneWidget);
+      expect(find.text('0'), findsOneWidget);
     });
 
-    testWidgets('should show loading indicator when loading', (tester) async {
-      // Arrange
-      final mockViewModel = MockUserProfileViewModel();
-      when(mockViewModel.state).thenReturn(
-        const UserProfileState(status: UiStatus.loading),
-      );
-
-      // Act
+    testWidgets('should increment when + button is pressed', (tester) async {
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [
-            userProfileViewModelProvider.overrideWith((ref) => mockViewModel),
-          ],
-          child: const MaterialApp(home: UserProfileScreen()),
+          child: MaterialApp(home: CounterScreen()),
         ),
       );
 
-      // Assert
+      await tester.tap(find.text('+'));
+      await tester.pump();
+
+      expect(find.text('1'), findsOneWidget);
+    });
+
+    testWidgets('should show loading indicator during reset', (tester) async {
+      await tester.pumpWidget(
+        ProviderScope(
+          child: MaterialApp(home: CounterScreen()),
+        ),
+      );
+
+      await tester.tap(find.text('Reset'));
+      await tester.pump();
+
       expect(find.byType(CircularProgressIndicator), findsOneWidget);
     });
   });
@@ -496,35 +589,12 @@ void main() {
 
 ```dart
 class AppViewModelObserver extends ViewModelObserver {
-  @override
-  void onStateChange(String viewModelName, UiState oldState, UiState newState) {
-    // Log state changes for debugging
-    print('[$viewModelName] ${oldState.status} -> ${newState.status}');
-
-    // Analytics tracking
-    if (newState.status == UiStatus.error) {
-      _trackError(viewModelName, newState.errorMessage);
-    }
-  }
-
-  @override
-  void onError(String viewModelName, Object error, StackTrace stackTrace) {
-    // Error reporting
-    _reportError(viewModelName, error, stackTrace);
-  }
-
-  @override
-  void onDispose(String viewModelName) {
-    print('[$viewModelName] disposed');
-  }
-
-  void _trackError(String viewModelName, String? errorMessage) {
-    // Send to analytics service
-  }
-
-  void _reportError(String viewModelName, Object error, StackTrace stackTrace) {
-    // Send to crash reporting service
-  }
+  AppViewModelObserver() : super(
+    logStateChanges: kDebugMode,
+    logErrors: true,
+    logProviderLifecycle: false,
+    verbose: false,
+  );
 }
 
 // Setup in main.dart
@@ -557,6 +627,21 @@ dev_dependencies:
   json_serializable: ^6.9.5
 ```
 
+## Code Generation
+
+After creating or modifying Freezed classes, run:
+
+```bash
+dart pub get
+dart pub run build_runner build
+```
+
+For watching changes during development:
+
+```bash
+dart pub run build_runner watch
+```
+
 ## Best Practices
 
 ### 1. State Organization
@@ -564,10 +649,13 @@ dev_dependencies:
 ```dart
 // Keep states focused and cohesive
 @freezed
-class FeatureState with _$FeatureState implements UiState {
+class FeatureState extends UiState<FeatureState> with _$FeatureState {
+  const FeatureState._();
+
   const factory FeatureState({
     // Core state
-    @Default(UiStatus.initial) UiStatus status,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    String? message,
     String? errorMessage,
 
     // Feature-specific data
@@ -577,6 +665,9 @@ class FeatureState with _$FeatureState implements UiState {
     @Default(false) bool isEditing,
     @Default([]) List<ValidationError> validationErrors,
   }) = _FeatureState;
+
+  @override
+  FeatureState get loading => copyWith(uiStatus: UiStatus.loading);
 }
 ```
 
@@ -588,13 +679,26 @@ class RobustViewModel extends ViewModel<RobustState> {
     try {
       state = state.loading;
       final result = await _repository.performAction();
-      state = state.success(result);
+      state = state.copyWith(
+        result: result,
+        uiStatus: UiStatus.success,
+        message: 'Operation completed successfully',
+      );
     } on NetworkException catch (e) {
-      state = state.error('Network error: Please check your connection');
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'Network error: Please check your connection',
+      );
     } on ValidationException catch (e) {
-      state = state.error('Validation error: ${e.message}');
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'Validation error: ${e.message}',
+      );
     } catch (e) {
-      state = state.error('An unexpected error occurred');
+      state = state.copyWith(
+        uiStatus: UiStatus.error,
+        errorMessage: 'An unexpected error occurred',
+      );
       // Report to crash analytics
       _reportError(e);
     }
@@ -607,13 +711,16 @@ class RobustViewModel extends ViewModel<RobustState> {
 ```dart
 // Use const constructors for states
 @freezed
-class OptimizedState with _$OptimizedState implements UiState {
+class OptimizedState extends UiState<OptimizedState> with _$OptimizedState {
+  const OptimizedState._();
+
   const factory OptimizedState({
-    @Default(UiStatus.initial) UiStatus status,
+    @Default(UiStatus.initial) UiStatus uiStatus,
     // ... other fields
   }) = _OptimizedState;
 
-  const OptimizedState._();
+  @override
+  OptimizedState get loading => copyWith(uiStatus: UiStatus.loading);
 }
 
 // Implement efficient state updates
@@ -635,4 +742,4 @@ class OptimizedViewModel extends ViewModel<OptimizedState> {
 
 ---
 
-The ViewModel package provides a robust foundation for state management in modular Flutter applications.
+The ViewModel package provides a robust foundation for state management in modular Flutter applications with comprehensive testing, debugging, and performance optimization features.

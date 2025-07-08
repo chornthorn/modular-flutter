@@ -13,11 +13,13 @@
 ///
 library;
 
+export 'package:go_router/go_router.dart';
+
 export 'src/app_config.dart';
+export 'src/modular_observer.dart';
 export 'src/module_base.dart' show Module;
-export 'src/module_router.dart';
 export 'src/module_manager_base.dart';
 export 'src/module_registry.dart';
-export 'src/modular_observer.dart';
+export 'src/module_router.dart';
 export 'src/result.dart';
-export 'package:go_router/go_router.dart';
+export 'src/service_locator.dart';

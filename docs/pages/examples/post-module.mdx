@@ -10,36 +10,37 @@ The Post Module is a complete implementation that demonstrates all aspects of th
 The Post Module includes:
 
 - **Posts List Screen**: Display all posts with pull-to-refresh
-- **Post Details Screen**: Show individual post details
+- **Post Details Screen**: Show individual post details with delete functionality
 - **CRUD Operations**: Create, Read, Update, Delete posts
-- **State Management**: ViewModel pattern with Riverpod
-- **Error Handling**: Result types and user-friendly error messages
-- **Navigation**: Deep linking with GoRouter
+- **State Management**: ViewModel pattern with Riverpod and UiState
+- **Error Handling**: Comprehensive error handling with user-friendly messages
+- **Navigation**: Deep linking with GoRouter and modular routing
 
 ## File Structure
 
 ```
 post_module/
 ├── models/
-│   └── post_model.dart           # Post data model
-├── providers/
-│   └── post_providers.dart       # Riverpod providers
+│   └── post_model.dart                    # Post data model
+├── pages/
+│   ├── post_details_screen.dart           # Post details UI
+│   └── posts_list_screen.dart             # Posts list UI
 ├── repositories/
-│   ├── post_repository.dart      # Repository interface
-│   └── post_repository_impl.dart # Repository implementation
-├── screens/
-│   ├── post_details_screen.dart  # Post details UI
-│   └── posts_list_screen.dart    # Posts list UI
+│   ├── post_repository.dart               # Repository interface
+│   └── post_repository_impl.dart          # Repository implementation
 ├── services/
-│   └── post_service.dart         # API service
-├── states/
-│   ├── post_details_state.dart   # Post details state
-│   └── posts_list_state.dart     # Posts list state
+│   └── post_service.dart                  # API service
 ├── viewmodels/
-│   ├── post_details_viewmodel.dart # Post details business logic
-│   └── posts_list_viewmodel.dart   # Posts list business logic
-├── post_module.dart              # Module definition
-└── post_router.dart              # Module routing
+│   ├── post_detail/
+│   │   ├── post_details_state.dart        # Post details state
+│   │   ├── post_details_state.freezed.dart # Generated Freezed code
+│   │   └── post_details_viewmodel.dart    # Post details business logic
+│   └── post_list/
+│       ├── posts_list_state.dart          # Posts list state
+│       ├── posts_list_state.freezed.dart  # Generated Freezed code
+│       └── posts_list_viewmodel.dart      # Posts list business logic
+├── post_module.dart                       # Module definition
+└── post_router.dart                       # Module routing
 ```
 
 ## 1. Module Definition
@@ -100,19 +101,54 @@ class PostRouter extends ModuleRouter {
 
 ## 3. Data Model
 
-The `Post` model using Freezed for immutability:
+The `Post` model using a simple class:
 
 ```dart
-@freezed
-class Post with _$Post {
-  const factory Post({
-    required int id,
-    required String title,
-    required String body,
-    required int userId,
-  }) = _Post;
+class Post {
+  final int id;
+  final int userId;
+  final String title;
+  final String body;
 
-  factory Post.fromJson(Map<String, dynamic> json) => _$PostFromJson(json);
+  const Post({
+    required this.id,
+    required this.userId,
+    required this.title,
+    required this.body,
+  });
+
+  factory Post.fromJson(Map<String, dynamic> json) {
+    return Post(
+      id: json['id'] as int,
+      userId: json['userId'] as int,
+      title: json['title'] as String,
+      body: json['body'] as String,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {'id': id, 'userId': userId, 'title': title, 'body': body};
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Post &&
+        other.id == id &&
+        other.userId == userId &&
+        other.title == title &&
+        other.body == body;
+  }
+
+  @override
+  int get hashCode {
+    return id.hashCode ^ userId.hashCode ^ title.hashCode ^ body.hashCode;
+  }
+
+  @override
+  String toString() {
+    return 'Post(id: $id, userId: $userId, title: $title, body: $body)';
+  }
 }
 ```
 
@@ -122,36 +158,125 @@ The `PostService` handles API communication:
 
 ```dart
 class PostService {
-  final String _baseUrl = 'https://jsonplaceholder.typicode.com';
-  final http.Client _client = http.Client();
+  static const String _baseUrl = 'https://jsonplaceholder.typicode.com';
+  final http.Client _client;
 
-  Future<List<Post>> getPosts() async {
-    final response = await _client.get(Uri.parse('$_baseUrl/posts'));
+  PostService({http.Client? client}) : _client = client ?? http.Client();
 
-    if (response.statusCode == 200) {
-      final List<dynamic> jsonList = json.decode(response.body);
-      return jsonList.map((json) => Post.fromJson(json)).toList();
-    } else {
-      throw Exception('Failed to load posts');
+  /// Fetch all posts
+  Future<List<Post>> fetchPosts() async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/posts'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> jsonData = json.decode(response.body);
+        return jsonData.map((json) => Post.fromJson(json)).toList();
+      } else {
+        throw Exception(
+          'Failed to load posts: ${response.statusCode} - ${response.reasonPhrase}',
+        );
+      }
+    } catch (e) {
+      throw Exception('Error fetching posts: $e');
     }
   }
 
-  Future<Post> getPost(int id) async {
-    final response = await _client.get(Uri.parse('$_baseUrl/posts/$id'));
+  /// Fetch a single post by ID
+  Future<Post> fetchPost(int id) async {
+    try {
+      final response = await _client.get(
+        Uri.parse('$_baseUrl/posts/$id'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
 
-    if (response.statusCode == 200) {
-      return Post.fromJson(json.decode(response.body));
-    } else {
-      throw Exception('Failed to load post');
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonData = json.decode(response.body);
+        return Post.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to load post: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error fetching post: $e');
     }
   }
 
+  /// Create a new post
+  Future<Post> createPost(Post post) async {
+    try {
+      final response = await _client.post(
+        Uri.parse('$_baseUrl/posts'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(post.toJson()),
+      );
+
+      if (response.statusCode == 201) {
+        final Map<String, dynamic> jsonData = json.decode(response.body);
+        return Post.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to create post: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error creating post: $e');
+    }
+  }
+
+  /// Update an existing post
+  Future<Post> updatePost(Post post) async {
+    try {
+      final response = await _client.put(
+        Uri.parse('$_baseUrl/posts/${post.id}'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: json.encode(post.toJson()),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> jsonData = json.decode(response.body);
+        return Post.fromJson(jsonData);
+      } else {
+        throw Exception('Failed to update post: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error updating post: $e');
+    }
+  }
+
+  /// Delete a post
   Future<void> deletePost(int id) async {
-    final response = await _client.delete(Uri.parse('$_baseUrl/posts/$id'));
+    try {
+      final response = await _client.delete(
+        Uri.parse('$_baseUrl/posts/$id'),
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+        },
+      );
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to delete post');
+      if (response.statusCode != 200) {
+        throw Exception('Failed to delete post: ${response.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('Error deleting post: $e');
     }
+  }
+
+  /// Dispose the HTTP client
+  void dispose() {
+    _client.close();
   }
 }
 ```
@@ -161,12 +286,25 @@ class PostService {
 The repository abstracts data access:
 
 ```dart
+/// Abstract repository interface for post operations
 abstract class PostRepository {
+  /// Fetch all posts
   Future<List<Post>> fetchPosts();
-  Future<Post> getPost(int id);
+
+  /// Fetch a single post by ID
+  Future<Post> fetchPost(int id);
+
+  /// Create a new post
+  Future<Post> createPost(Post post);
+
+  /// Update an existing post
+  Future<Post> updatePost(Post post);
+
+  /// Delete a post by ID
   Future<void> deletePost(int id);
 }
 
+/// Implementation of PostRepository using PostService
 class PostRepositoryImpl implements PostRepository {
   final PostService _postService;
 
@@ -174,17 +312,27 @@ class PostRepositoryImpl implements PostRepository {
 
   @override
   Future<List<Post>> fetchPosts() async {
-    return await _postService.getPosts();
+    return await _postService.fetchPosts();
   }
 
   @override
-  Future<Post> getPost(int id) async {
-    return await _postService.getPost(id);
+  Future<Post> fetchPost(int id) async {
+    return await _postService.fetchPost(id);
+  }
+
+  @override
+  Future<Post> createPost(Post post) async {
+    return await _postService.createPost(post);
+  }
+
+  @override
+  Future<Post> updatePost(Post post) async {
+    return await _postService.updatePost(post);
   }
 
   @override
   Future<void> deletePost(int id) async {
-    await _postService.deletePost(id);
+    return await _postService.deletePost(id);
   }
 }
 ```
@@ -195,28 +343,26 @@ class PostRepositoryImpl implements PostRepository {
 
 ```dart
 @freezed
-class PostsListState with _$PostsListState implements UiState {
-  const factory PostsListState({
-    @Default(UiStatus.initial) UiStatus status,
-    @Default([]) List<Post> posts,
-    String? errorMessage,
-  }) = _PostsListState;
-
+abstract class PostsListState extends UiState<PostsListState>
+    with _$PostsListState {
   const PostsListState._();
 
-  // Helper methods for state transitions
-  PostsListState get loading => copyWith(status: UiStatus.loading);
+  const factory PostsListState({
+    @Default([]) List<Post> posts,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    @Default('') String errorMessage,
+  }) = _PostsListState;
 
-  PostsListState withPosts(List<Post> posts) => copyWith(
-    status: UiStatus.success,
-    posts: posts,
-    errorMessage: null,
-  );
+  @override
+  PostsListState get loading => copyWith(uiStatus: UiStatus.loading);
 
-  PostsListState error(String message) => copyWith(
-    status: UiStatus.error,
-    errorMessage: message,
-  );
+  PostsListState get success => copyWith(uiStatus: UiStatus.success);
+
+  PostsListState error(String message) =>
+      copyWith(uiStatus: UiStatus.error, errorMessage: message);
+
+  PostsListState withPosts(List<Post> posts) =>
+      copyWith(posts: posts, uiStatus: UiStatus.success, errorMessage: '');
 }
 ```
 
@@ -224,27 +370,39 @@ class PostsListState with _$PostsListState implements UiState {
 
 ```dart
 @freezed
-class PostDetailsState with _$PostDetailsState implements UiState {
-  const factory PostDetailsState({
-    @Default(UiStatus.initial) UiStatus status,
-    Post? post,
-    String? errorMessage,
-  }) = _PostDetailsState;
-
+abstract class PostDetailsState extends UiState<PostDetailsState>
+    with _$PostDetailsState {
   const PostDetailsState._();
 
-  PostDetailsState get loading => copyWith(status: UiStatus.loading);
+  const factory PostDetailsState({
+    Post? post,
+    @Default(UiStatus.initial) UiStatus uiStatus,
+    @Default('') String errorMessage,
+    @Default(false) bool isDeleting,
+  }) = _PostDetailsState;
 
-  PostDetailsState withPost(Post post) => copyWith(
-    status: UiStatus.success,
-    post: post,
-    errorMessage: null,
-  );
+  @override
+  PostDetailsState get loading => copyWith(uiStatus: UiStatus.loading);
+
+  PostDetailsState get success => copyWith(uiStatus: UiStatus.success);
+
+  PostDetailsState get deleting => copyWith(isDeleting: true);
 
   PostDetailsState error(String message) => copyWith(
-    status: UiStatus.error,
+    uiStatus: UiStatus.error,
     errorMessage: message,
+    isDeleting: false,
   );
+
+  PostDetailsState withPost(Post post) => copyWith(
+    post: post,
+    uiStatus: UiStatus.success,
+    errorMessage: '',
+    isDeleting: false,
+  );
+
+  PostDetailsState get deleteSuccess =>
+      copyWith(uiStatus: UiStatus.success, isDeleting: false);
 }
 ```
 
@@ -253,6 +411,7 @@ class PostDetailsState with _$PostDetailsState implements UiState {
 ### Posts List ViewModel
 
 ```dart
+/// ViewModel for the posts list screen
 class PostsListViewModel extends ViewModel<PostsListState> {
   final PostRepository _postRepository;
 
@@ -292,56 +451,73 @@ class PostsListViewModel extends ViewModel<PostsListState> {
     }
   }
 }
+
+final postsListViewModelProvider =
+    StateNotifierProvider<PostsListViewModel, PostsListState>((ref) {
+      final repository = serviceLocator<PostRepository>();
+      return PostsListViewModel(repository);
+    });
 ```
 
 ### Post Details ViewModel
 
 ```dart
+/// ViewModel for the post details screen
 class PostDetailsViewModel extends ViewModel<PostDetailsState> {
   final PostRepository _postRepository;
-  final String postId;
+  final int postId;
 
   PostDetailsViewModel(this._postRepository, this.postId)
-      : super(const PostDetailsState());
+    : super(const PostDetailsState());
 
   @override
   Future<void> onInit() async {
     await loadPost();
   }
 
+  /// Load a specific post by ID
   Future<void> loadPost() async {
     try {
       state = state.loading;
-      final post = await _postRepository.getPost(int.parse(postId));
+      final post = await _postRepository.fetchPost(postId);
       state = state.withPost(post);
     } catch (e) {
       state = state.error(e.toString());
     }
   }
 
+  /// Refresh the post details
   Future<void> refreshPost() async {
     await loadPost();
   }
+
+  /// Delete the current post
+  Future<bool> deletePost() async {
+    if (state.post == null) return false;
+
+    try {
+      state = state.deleting;
+      await _postRepository.deletePost(state.post!.id);
+      state = state.deleteSuccess;
+      return true;
+    } catch (e) {
+      state = state.error('Failed to delete post: ${e.toString()}');
+      return false;
+    }
+  }
 }
+
+final postDetailsViewModelProvider =
+    StateNotifierProvider.family<PostDetailsViewModel, PostDetailsState, int>((
+      ref,
+      postId,
+    ) {
+      final repository = serviceLocator.get<PostRepository>();
+      return PostDetailsViewModel(repository, postId);
+    });
 ```
 
-## 8. Riverpod Providers
-
-```dart
-// Provider for PostsListViewModel
-final postsListViewModelProvider = StateNotifierProvider<PostsListViewModel, PostsListState>((ref) {
-  final repository = GetIt.instance<PostRepository>();
-  return PostsListViewModel(repository);
-});
-
-// Provider for PostDetailsViewModel
-final postDetailsViewModelProvider = StateNotifierProvider.family<PostDetailsViewModel, PostDetailsState, String>((ref, postId) {
-  final repository = GetIt.instance<PostRepository>();
-  return PostDetailsViewModel(repository, postId);
-});
-```
-
-## 9. UI Implementation
+## 8. UI Implementation
 
 ### Posts List Screen
 
@@ -349,56 +525,125 @@ final postDetailsViewModelProvider = StateNotifierProvider.family<PostDetailsVie
 class PostsListScreen extends ConsumerWidget {
   const PostsListScreen({super.key});
 
+  Future<void> _refreshPosts(WidgetRef ref) async {
+    await ref.read(postsListViewModelProvider.notifier).refreshPosts();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(postsListViewModelProvider);
-    final viewModel = ref.read(postsListViewModelProvider.notifier);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Posts'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: () => _refreshPosts(ref),
+          ),
+        ],
       ),
-      body: _buildBody(context, state, viewModel),
+      body: _buildBody(context, state, ref),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // Navigate to create post screen
+          // This will be implemented later
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Create post feature coming soon!')),
+          );
+        },
+        child: const Icon(Icons.add),
+      ),
     );
   }
 
-  Widget _buildBody(BuildContext context, PostsListState state, PostsListViewModel viewModel) {
-    switch (state.status) {
-      case UiStatus.initial:
-      case UiStatus.loading:
-        return const Center(child: CircularProgressIndicator());
+  Widget _buildBody(BuildContext context, PostsListState state, WidgetRef ref) {
+    if (state.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-      case UiStatus.success:
-        return RefreshIndicator(
-          onRefresh: viewModel.refreshPosts,
-          child: ListView.builder(
-            itemCount: state.posts.length,
-            itemBuilder: (context, index) {
-              final post = state.posts[index];
-              return PostListItem(
-                post: post,
-                onTap: () => context.go('/posts/${post.id}'),
-                onDelete: () => viewModel.deletePost(post.id),
-              );
+    if (state.isError) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error loading posts',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              state.errorMessage,
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _refreshPosts(ref),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (state.posts.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.post_add, size: 64),
+            SizedBox(height: 16),
+            Text('No posts found', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: state.posts.length,
+      itemBuilder: (context, index) {
+        final post = state.posts[index];
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              child: Text(
+                post.id.toString(),
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onPrimary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            title: Text(
+              post.title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            subtitle: Text(
+              post.body,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: const Icon(Icons.arrow_forward_ios),
+            onTap: () {
+              // Navigate to post details
+              context.push('/posts/${post.id}');
             },
           ),
         );
-
-      case UiStatus.error:
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('Error: ${state.errorMessage}'),
-              const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: viewModel.loadPosts,
-                child: const Text('Retry'),
-              ),
-            ],
-          ),
-        );
-    }
+      },
+    );
   }
 }
 ```
@@ -409,73 +654,263 @@ class PostsListScreen extends ConsumerWidget {
 class PostDetailsScreen extends ConsumerWidget {
   final String postId;
 
-  const PostDetailsScreen({required this.postId, super.key});
+  const PostDetailsScreen({super.key, required this.postId});
 
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(postDetailsViewModelProvider(postId));
-    final viewModel = ref.read(postDetailsViewModelProvider(postId).notifier);
+  Future<void> _refreshPost(WidgetRef ref) async {
+    await ref
+        .read(postDetailsViewModelProvider(int.parse(postId)).notifier)
+        .refreshPost();
+  }
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Post Details'),
+  Future<void> _deletePost(BuildContext context, WidgetRef ref) async {
+    // Show confirmation dialog
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post?'),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: viewModel.refreshPost,
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
           ),
         ],
       ),
-      body: _buildBody(context, state),
+    );
+
+    if (confirmed == true) {
+      final success = await ref
+          .read(postDetailsViewModelProvider(int.parse(postId)).notifier)
+          .deletePost();
+      if (success && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Post deleted successfully')),
+        );
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(postDetailsViewModelProvider(int.parse(postId)));
+
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
+        ),
+        title: Text(state.post?.title ?? 'Post Details'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        actions: [
+          if (state.post != null)
+            PopupMenuButton<String>(
+              onSelected: (value) {
+                switch (value) {
+                  case 'refresh':
+                    _refreshPost(ref);
+                    break;
+                  case 'delete':
+                    _deletePost(context, ref);
+                    break;
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'refresh',
+                  child: Row(
+                    children: [
+                      Icon(Icons.refresh),
+                      SizedBox(width: 8),
+                      Text('Refresh'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'delete',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete, color: Colors.red),
+                      SizedBox(width: 8),
+                      Text('Delete', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+      body: _buildBody(context, state, ref),
     );
   }
 
-  Widget _buildBody(BuildContext context, PostDetailsState state) {
-    switch (state.status) {
-      case UiStatus.initial:
-      case UiStatus.loading:
-        return const Center(child: CircularProgressIndicator());
+  Widget _buildBody(
+    BuildContext context,
+    PostDetailsState state,
+    WidgetRef ref,
+  ) {
+    if (state.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-      case UiStatus.success:
-        final post = state.post!;
-        return Padding(
+    if (state.isError) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 64,
+              color: Theme.of(context).colorScheme.error,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Error loading post',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              state.errorMessage,
+              style: Theme.of(context).textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _refreshPost(ref),
+              child: const Text('Retry'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (state.post == null) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.post_add, size: 64),
+            SizedBox(height: 16),
+            Text('Post not found', style: TextStyle(fontSize: 18)),
+          ],
+        ),
+      );
+    }
+
+    // Show loading overlay when deleting
+    return Stack(
+      children: [
+        SingleChildScrollView(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                post.title,
-                style: Theme.of(context).textTheme.headlineSmall,
+              // Post header
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: Theme.of(context).colorScheme.primary,
+                        child: Text(
+                          state.post!.id.toString(),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Post #${state.post!.id}',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            Text(
+                              'By User ${state.post!.userId}',
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
-              Text(
-                post.body,
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'User ID: ${post.userId}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        );
 
-      case UiStatus.error:
-        return Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text('Error: ${state.errorMessage}'),
+              // Post title
+              Text(
+                'Title',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    state.post!.title,
+                    style: Theme.of(context).textTheme.headlineSmall,
+                  ),
+                ),
+              ),
               const SizedBox(height: 16),
-              ElevatedButton(
-                onPressed: () => context.go('/posts'),
-                child: const Text('Back to Posts'),
+
+              // Post body
+              Text(
+                'Content',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    state.post!.body,
+                    style: Theme.of(context).textTheme.bodyLarge,
+                  ),
+                ),
               ),
             ],
           ),
-        );
-    }
+        ),
+
+        // Loading overlay when deleting
+        if (state.isDeleting)
+          Container(
+            color: Colors.black.withValues(alpha: 0.5),
+            child: const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Deleting post...',
+                    style: TextStyle(color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
 ```
@@ -484,33 +919,41 @@ class PostDetailsScreen extends ConsumerWidget {
 
 ### 1. **Modular Structure**
 
-- Clear separation of concerns
-- Consistent file organization
-- Easy to locate and modify code
+- Clear separation of concerns with organized directories
+- Consistent file organization pattern
+- Easy to locate and modify specific functionality
 
 ### 2. **Dependency Injection**
 
-- Services and repositories are automatically injected
+- Services and repositories automatically injected via `ServiceLocator`
 - Easy to mock for testing
 - Clear dependency relationships
 
 ### 3. **State Management**
 
-- Type-safe state with Freezed
+- Type-safe state with Freezed and UiState pattern
 - Reactive UI updates with Riverpod
-- Clear state transitions
+- Clear state transitions and loading states
+- Specialized states for different operations (deleting)
 
 ### 4. **Error Handling**
 
 - Comprehensive error handling throughout the stack
-- User-friendly error messages
+- User-friendly error messages with retry functionality
 - Graceful failure recovery
 
 ### 5. **Navigation**
 
-- Deep linking support
+- Deep linking support with parameter extraction
 - Type-safe route parameters
-- Seamless navigation between screens
+- Seamless navigation using `context.push()` and `context.pop()`
+
+### 6. **Advanced UI Patterns**
+
+- Loading overlays for long-running operations
+- Confirmation dialogs for destructive actions
+- Pull-to-refresh functionality
+- Empty state handling
 
 ## Testing the Module
 
@@ -527,6 +970,10 @@ void main() {
       viewModel = PostsListViewModel(mockRepository);
     });
 
+    tearDown(() {
+      viewModel.dispose();
+    });
+
     test('should load posts successfully', () async {
       // Arrange
       final posts = [Post(id: 1, title: 'Test', body: 'Body', userId: 1)];
@@ -536,7 +983,7 @@ void main() {
       await viewModel.loadPosts();
 
       // Assert
-      expect(viewModel.state.status, UiStatus.success);
+      expect(viewModel.state.uiStatus, UiStatus.success);
       expect(viewModel.state.posts, posts);
     });
 
@@ -548,8 +995,50 @@ void main() {
       await viewModel.loadPosts();
 
       // Assert
-      expect(viewModel.state.status, UiStatus.error);
+      expect(viewModel.state.uiStatus, UiStatus.error);
       expect(viewModel.state.errorMessage, contains('Network error'));
+    });
+  });
+
+  group('PostDetailsViewModel', () {
+    late MockPostRepository mockRepository;
+    late PostDetailsViewModel viewModel;
+
+    setUp(() {
+      mockRepository = MockPostRepository();
+      viewModel = PostDetailsViewModel(mockRepository, 1);
+    });
+
+    tearDown(() {
+      viewModel.dispose();
+    });
+
+    test('should load post details successfully', () async {
+      // Arrange
+      final post = Post(id: 1, title: 'Test', body: 'Body', userId: 1);
+      when(mockRepository.fetchPost(1)).thenAnswer((_) async => post);
+
+      // Act
+      await viewModel.loadPost();
+
+      // Assert
+      expect(viewModel.state.uiStatus, UiStatus.success);
+      expect(viewModel.state.post, post);
+    });
+
+    test('should delete post successfully', () async {
+      // Arrange
+      final post = Post(id: 1, title: 'Test', body: 'Body', userId: 1);
+      viewModel.state = viewModel.state.withPost(post);
+      when(mockRepository.deletePost(1)).thenAnswer((_) async {});
+
+      // Act
+      final result = await viewModel.deletePost();
+
+      // Assert
+      expect(result, isTrue);
+      expect(viewModel.state.uiStatus, UiStatus.success);
+      expect(viewModel.state.isDeleting, isFalse);
     });
   });
 }
@@ -577,8 +1066,60 @@ void main() {
       // Assert
       expect(find.text('Test Post'), findsOneWidget);
     });
+
+    testWidgets('should show error state correctly', (tester) async {
+      // Arrange
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            postsListViewModelProvider.overrideWith((ref) => MockPostsListViewModel.error()),
+          ],
+          child: const MaterialApp(home: PostsListScreen()),
+        ),
+      );
+
+      // Assert
+      expect(find.text('Error loading posts'), findsOneWidget);
+      expect(find.text('Retry'), findsOneWidget);
+    });
+  });
+
+  group('PostDetailsScreen', () {
+    testWidgets('should display post details when loaded', (tester) async {
+      // Arrange
+      final post = Post(id: 1, title: 'Test Post', body: 'Test Body', userId: 1);
+
+      // Act
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            postDetailsViewModelProvider(1).overrideWith((ref) => MockPostDetailsViewModel(post)),
+          ],
+          child: const MaterialApp(home: PostDetailsScreen(postId: '1')),
+        ),
+      );
+
+      // Assert
+      expect(find.text('Test Post'), findsOneWidget);
+      expect(find.text('Test Body'), findsOneWidget);
+    });
   });
 }
+```
+
+## Code Generation
+
+After creating or modifying Freezed classes, run:
+
+```bash
+dart pub get
+dart pub run build_runner build
+```
+
+For watching changes during development:
+
+```bash
+dart pub run build_runner watch
 ```
 
 ## Next Steps
@@ -587,7 +1128,8 @@ void main() {
 - [Explore State Management](/guides/state-management)
 - [Understand Dependency Injection](/guides/dependency-injection)
 - [Set up Testing](/guides/testing)
+- [Learn about ViewModel Pattern](/architecture/viewmodel)
 
 ---
 
-This example demonstrates a complete, production-ready module implementation following all the architectural patterns and best practices.
+This example demonstrates a complete, production-ready module implementation following all the architectural patterns and best practices of the modular Flutter framework.

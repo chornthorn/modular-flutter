@@ -1,10 +1,10 @@
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
-import 'app_config.dart';
-import 'module_base.dart';
-import 'modular_observer.dart';
 
-typedef ServiceLocator = GetIt;
+import 'app_config.dart';
+import 'modular_observer.dart';
+import 'module_base.dart';
+import 'service_locator.dart';
 
 /// A centralized registry for managing application modules
 ///

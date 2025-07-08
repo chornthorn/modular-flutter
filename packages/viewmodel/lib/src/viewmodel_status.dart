@@ -5,4 +5,4 @@
 /// - [loading]: The ViewModel is currently performing an operation
 /// - [success]: The ViewModel has successfully completed an operation
 /// - [error]: The ViewModel encountered an error during an operation
-enum Status { initial, loading, success, error }
+enum UiStatus { initial, loading, success, error }
