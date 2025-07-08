@@ -13,6 +13,26 @@ dev_dependencies:
 
 melos:
   scripts:
+    # Setup environment files for CI/CD
+    setup:
+      description: Setup environment files for CI/CD
+      run: |
+        if [ ! -f example/.env ]; then
+          echo "# Environment variables for example app" > example/.env
+          echo "# Add your environment specific variables here" >> example/.env
+          echo "" >> example/.env
+          echo "# API Configuration" >> example/.env
+          echo "# API_URL=https://api.example.com" >> example/.env
+          echo "# API_KEY=your_api_key_here" >> example/.env
+          echo "" >> example/.env
+          echo "# App Configuration" >> example/.env
+          echo "# APP_NAME=Example App" >> example/.env
+          echo "# DEBUG_MODE=true" >> example/.env
+          echo "Created example/.env file"
+        else
+          echo "example/.env already exists"
+        fi
+
     # Generate code (freezed, json_serializable)
     generate:
       description: Generate code for all packages using build_runner
@@ -30,9 +50,9 @@ melos:
     # Run tests for all packages
     test:
       description: Run tests for all packages
-      exec: dart test
-      concurrency: 3
-      failFast: true
+      steps:
+        - melos run setup
+        - melos exec --concurrency=3 --fail-fast -- dart test
       packageFilters:
         dirExists: "test"
 
@@ -44,7 +64,9 @@ melos:
     # Analyze code for all packages
     analyze:
       description: Analyze code for all packages
-      run: dart analyze
+      steps:
+        - melos run setup
+        - dart analyze
 
     # Clean all packages
     clean:
