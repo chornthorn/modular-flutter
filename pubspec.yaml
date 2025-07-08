@@ -30,7 +30,9 @@ melos:
     # Run tests for all packages
     test:
       description: Run tests for all packages
-      run: dart test
+      exec: dart test
+      concurrency: 3
+      failFast: true
       packageFilters:
         dirExists: "test"
 
