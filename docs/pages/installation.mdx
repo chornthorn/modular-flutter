@@ -83,43 +83,60 @@ This will check for:
 
 ## Project Setup
 
-### 1. Clone the Repository
+### 1. Create a New Flutter Project
 
 ```bash
-git clone https://github.com/your-username/modular-flutter.git
-cd modular-flutter
+flutter create my_modular_app
+cd my_modular_app
 ```
 
-### 2. Install Melos
+### 2. Add Dependencies
 
-Melos is used for managing the multi-package workspace:
+Add the Modular Flutter packages to your `pubspec.yaml`:
 
-```bash
-dart pub global activate melos
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+  
+  # Modular Flutter packages
+  modular_flutter:
+    git:
+      url: https://github.com/chornthorn/modular-flutter.git
+      path: packages/modular_flutter
+      ref: main
+  viewmodel:
+    git:
+      url: https://github.com/chornthorn/modular-flutter.git
+      path: packages/viewmodel
+      ref: main
+  
+  # Additional dependencies
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  
+  # Code generation
+  build_runner: ^2.4.7
+  freezed: ^3.1.0
+  json_serializable: ^6.7.1
 ```
 
-### 3. Bootstrap the Workspace
-
-This will install dependencies for all packages:
+### 3. Install Dependencies
 
 ```bash
-melos bootstrap
+flutter pub get
 ```
 
 ### 4. Verify Setup
 
-Check that all packages are properly configured:
+Check that all packages are properly installed:
 
 ```bash
-melos list
+flutter pub deps
 ```
-
-You should see:
-
-- `modular_core`
-- `modular_flutter`
-- `viewmodel`
-- `example`
 
 ## IDE Configuration
 
@@ -208,19 +225,17 @@ flutter config --enable-windows-desktop
 flutter config --enable-linux-desktop
 ```
 
-## Running the Example
+## Running Your App
 
 ### Mobile/Desktop
 
 ```bash
-cd example
 flutter run
 ```
 
 ### Web
 
 ```bash
-cd example
 flutter run -d web-server --web-port 8080
 ```
 
@@ -253,7 +268,7 @@ flutter run -d linux
 Generate code for state classes:
 
 ```bash
-melos generate
+dart run build_runner build
 ```
 
 ### Testing
@@ -261,7 +276,7 @@ melos generate
 Run all tests:
 
 ```bash
-melos test
+flutter test
 ```
 
 ### Code Analysis
@@ -269,7 +284,7 @@ melos test
 Check code quality:
 
 ```bash
-melos analyze
+flutter analyze
 ```
 
 ### Formatting
@@ -277,7 +292,7 @@ melos analyze
 Format code:
 
 ```bash
-melos format
+dart format .
 ```
 
 ## Environment Variables
@@ -336,13 +351,14 @@ FEATURE_ANALYTICS=false
 1. **Dependency conflicts**:
 
    ```bash
-   melos clean
-   melos bootstrap
+   flutter clean
+   flutter pub get
    ```
 
 2. **Code generation issues**:
    ```bash
-   melos generate
+   dart run build_runner clean
+   dart run build_runner build
    ```
 
 ## Getting Help

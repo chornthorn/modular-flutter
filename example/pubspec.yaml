@@ -34,10 +34,21 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  # modular_flutter:
+  #   path: ../packages/modular_flutter
+  # viewmodel:
+  #   path: ../packages/viewmodel
+
   modular_flutter:
-    path: ../packages/modular_flutter
+    git:
+      url: https://github.com/chornthorn/modular-flutter.git
+      path: packages/modular_flutter
+      ref: main
   viewmodel:
-    path: ../packages/viewmodel
+    git:
+      url: https://github.com/chornthorn/modular-flutter.git
+      path: packages/viewmodel
+      ref: main
   http: ^1.1.0
 
 dev_dependencies:

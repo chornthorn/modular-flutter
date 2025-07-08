@@ -13,27 +13,51 @@ Before you begin, make sure you have:
 - [Dart SDK](https://dart.dev/get-dart) (3.8.1+)
 - [Git](https://git-scm.com/)
 
-## Step 1: Clone the Repository
+## Step 1: Create a New Project
 
 ```bash
-git clone https://github.com/your-username/modular-flutter.git
-cd modular-flutter
+flutter create my_modular_app
+cd my_modular_app
 ```
 
-## Step 2: Install Dependencies
+## Step 2: Add Dependencies
 
-```bash
-# Install melos globally for workspace management
-dart pub global activate melos
+Add the Modular Flutter packages to your `pubspec.yaml`:
 
-# Bootstrap the workspace and install all dependencies
-melos bootstrap
+```yaml
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Modular Flutter packages
+  modular_flutter:
+    git:
+      url: https://github.com/chornthorn/modular-flutter.git
+      path: packages/modular_flutter
+      ref: main
+  viewmodel:
+    git:
+      url: https://github.com/chornthorn/modular-flutter.git
+      path: packages/viewmodel
+      ref: main
+
+  # Additional dependencies
+  http: ^1.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Code generation
+  build_runner: ^2.4.7
+  freezed: ^3.1.0
+  json_serializable: ^6.7.1
 ```
 
-## Step 3: Run the Example App
+## Step 3: Install and Run
 
 ```bash
-cd example
+flutter pub get
 flutter run
 ```
 
@@ -78,22 +102,22 @@ Here are the most useful commands for development:
 
 ```bash
 # Run all tests
-melos test
+flutter test
 
 # Generate code (freezed, json_serializable)
-melos generate
+dart run build_runner build
 
 # Format code
-melos format
+dart format .
 
 # Analyze code
-melos analyze
+flutter analyze
 
-# Clean all packages
-melos clean
+# Clean build
+flutter clean
 
 # Check for outdated dependencies
-melos outdated
+flutter pub outdated
 ```
 
 ## Troubleshooting
@@ -105,14 +129,15 @@ If you encounter build issues:
 1. **Clean and rebuild**:
 
    ```bash
-   melos clean
-   melos bootstrap
+   flutter clean
+   flutter pub get
    ```
 
 2. **Generate code**:
 
    ```bash
-   melos generate
+   dart run build_runner clean
+   dart run build_runner build
    ```
 
 3. **Check Flutter version**:
@@ -124,13 +149,13 @@ If you encounter build issues:
 
 If you see import errors:
 
-1. **Bootstrap the workspace**:
+1. **Reinstall dependencies**:
 
    ```bash
-   melos bootstrap
+   flutter pub get
    ```
 
-2. **Check pubspec.yaml files** for correct version constraints
+2. **Check pubspec.yaml** for correct version constraints
 
 ### IDE Setup
 

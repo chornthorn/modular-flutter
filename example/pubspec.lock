@@ -435,16 +435,20 @@ packages:
   modular_core:
     dependency: transitive
     description:
-      path: "../packages/modular_core"
-      relative: true
-    source: path
+      path: "packages/modular_core"
+      ref: main
+      resolved-ref: edb6a81a957dab7988eb9ae681dcded11bdba1df
+      url: "https://github.com/chornthorn/modular-flutter.git"
+    source: git
     version: "1.0.0"
   modular_flutter:
     dependency: "direct main"
     description:
-      path: "../packages/modular_flutter"
-      relative: true
-    source: path
+      path: "packages/modular_flutter"
+      ref: main
+      resolved-ref: edb6a81a957dab7988eb9ae681dcded11bdba1df
+      url: "https://github.com/chornthorn/modular-flutter.git"
+    source: git
     version: "1.0.0"
   package_config:
     dependency: transitive
@@ -622,9 +626,11 @@ packages:
   viewmodel:
     dependency: "direct main"
     description:
-      path: "../packages/viewmodel"
-      relative: true
-    source: path
+      path: "packages/viewmodel"
+      ref: main
+      resolved-ref: edb6a81a957dab7988eb9ae681dcded11bdba1df
+      url: "https://github.com/chornthorn/modular-flutter.git"
+    source: git
     version: "1.0.0"
   vm_service:
     dependency: transitive
