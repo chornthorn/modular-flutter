@@ -2,7 +2,7 @@ import type { ZudokuConfig } from "zudoku";
 import PreviewBanner from "./src/PreviewBanner";
 
 const config: ZudokuConfig = {
-  basePath: "/modular-flutter",
+  // basePath: "/modular-flutter",
   canonicalUrlOrigin: "https://chornthorn.github.io/modular-flutter",
   site: {
     title: "Modular Flutter",
