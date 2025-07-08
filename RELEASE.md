@@ -46,11 +46,10 @@ The monorepo contains the following packages:
 
 ### Method 1: Automatic Release (Recommended)
 
-1. **Bump versions** using the provided script:
-
-   ```bash
-   ./scripts/bump_version.sh 1.1.0
-   ```
+1. **Update package versions** manually in their respective `pubspec.yaml` files:
+   - `packages/modular_core/pubspec.yaml`
+   - `packages/modular_flutter/pubspec.yaml`
+   - `packages/viewmodel/pubspec.yaml`
 
 2. **Review and test** the changes:
 
@@ -82,35 +81,7 @@ The monorepo contains the following packages:
 3. **Click "Run workflow"**
 4. **Fill in the version parameter**: `v1.1.0`
 
-## Version Bump Script
 
-The `scripts/bump_version.sh` script automates version management across all packages:
-
-### Usage
-
-```bash
-./scripts/bump_version.sh <new_version>
-```
-
-### Examples
-
-```bash
-# Release version
-./scripts/bump_version.sh 1.1.0
-
-# Pre-release version
-./scripts/bump_version.sh 1.1.0-beta.1
-
-# Patch version
-./scripts/bump_version.sh 1.0.1
-```
-
-### What it does
-
-- Updates `version` field in all package `pubspec.yaml` files
-- Skips packages marked with `publish_to: none`
-- Updates or creates `CHANGELOG.md` with new version section
-- Provides next steps for committing and tagging
 
 ## GitHub Release Features
 

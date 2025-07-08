@@ -11,9 +11,6 @@ on:
         required: true
         type: string
 
-env:
-  FLUTTER_VERSION: "latest"
-
 jobs:
   # Validate and test all packages
   validate:
@@ -31,7 +28,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: "stable"
           cache: true
 
       - name: Setup Melos
