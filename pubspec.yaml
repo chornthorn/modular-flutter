@@ -10,3 +10,53 @@ environment:
 
 dev_dependencies:
   melos: ^7.0.0-dev.9
+
+melos:
+  scripts:
+    # Generate code (freezed, json_serializable)
+    generate:
+      description: Generate code for all packages using build_runner
+      run: dart run build_runner build --delete-conflicting-outputs
+      packageFilters:
+        dependsOn: "build_runner"
+
+    # Watch for changes and generate code
+    generate:watch:
+      description: Watch for changes and generate code
+      run: dart run build_runner watch --delete-conflicting-outputs
+      packageFilters:
+        dependsOn: "build_runner"
+
+    # Run tests for all packages
+    test:
+      description: Run tests for all packages
+      run: dart test
+      packageFilters:
+        dirExists: "test"
+
+    # Format code for all packages
+    format:
+      description: Format code for all packages
+      run: dart format . --set-exit-if-changed
+
+    # Analyze code for all packages
+    analyze:
+      description: Analyze code for all packages
+      run: dart analyze
+
+    # Clean all packages
+    clean:
+      description: Clean all packages
+      run: flutter clean
+      packageFilters:
+        flutter: true
+
+    # Get dependencies for all packages
+    get:
+      description: Get dependencies for all packages
+      run: dart pub get
+
+    # Check for outdated dependencies
+    outdated:
+      description: Check for outdated dependencies
+      run: dart pub outdated
