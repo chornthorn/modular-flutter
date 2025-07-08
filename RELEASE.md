@@ -4,7 +4,7 @@ This document outlines the release process for the Modular Flutter project.
 
 ## Overview
 
-The project uses automated GitHub workflows to handle testing, building, and releasing packages. The release process supports both automatic releases (triggered by tags) and manual releases (using GitHub's workflow dispatch).
+The project uses automated GitHub workflows to handle testing, building, and creating GitHub releases. The release process supports both automatic releases (triggered by tags) and manual releases (using GitHub's workflow dispatch).
 
 ## Release Workflows
 
@@ -19,7 +19,7 @@ The project uses automated GitHub workflows to handle testing, building, and rel
 
 - Validates all packages
 - Runs tests, analysis, and formatting checks
-- Performs dry-run publish checks for publishable packages
+- Generates code using build runners
 
 ### 2. Release Workflow (`.github/workflows/release.yml`)
 
@@ -31,18 +31,16 @@ The project uses automated GitHub workflows to handle testing, building, and rel
 **Jobs:**
 
 1. **Validate & Test** - Runs comprehensive testing and validation
-2. **Build** - Builds all publishable packages
-3. **Release** - Creates GitHub release with changelog
-4. **Publish** - Optionally publishes packages to pub.dev (manual only)
-5. **Update Docs** - Updates CHANGELOG.md
+2. **Release** - Creates GitHub release with changelog
+3. **Update Docs** - Updates CHANGELOG.md
 
 ## Package Structure
 
 The monorepo contains the following packages:
 
-- **`packages/modular_core`** - Core functionality (publishable)
-- **`packages/modular_flutter`** - Flutter-specific code (not published - marked with `publish_to: none`)
-- **`packages/viewmodel`** - ViewModel implementation (publishable)
+- **`packages/modular_core`** - Core functionality
+- **`packages/modular_flutter`** - Flutter-specific code
+- **`packages/viewmodel`** - ViewModel implementation
 
 ## Release Methods
 
@@ -82,10 +80,7 @@ The monorepo contains the following packages:
 1. **Navigate to Actions** in your GitHub repository
 2. **Select the "Release" workflow**
 3. **Click "Run workflow"**
-4. **Fill in the parameters**:
-   - Version: `v1.1.0`
-   - Create GitHub release: `true`
-   - Publish packages: `false` (or `true` if you want to publish)
+4. **Fill in the version parameter**: `v1.1.0`
 
 ## Version Bump Script
 
@@ -117,30 +112,15 @@ The `scripts/bump_version.sh` script automates version management across all pac
 - Updates or creates `CHANGELOG.md` with new version section
 - Provides next steps for committing and tagging
 
-## Publishing to pub.dev
+## GitHub Release Features
 
-### Prerequisites
+The automated release process creates comprehensive GitHub releases with:
 
-To publish packages to pub.dev, you need to set up the following repository secrets:
-
-1. **`PUB_ACCESS_TOKEN`** - OAuth access token from pub.dev
-2. **`PUB_REFRESH_TOKEN`** - OAuth refresh token from pub.dev
-
-### Getting pub.dev credentials
-
-1. Run `dart pub token add https://pub.dev` locally
-2. Follow the OAuth flow to authenticate
-3. Extract tokens from `~/.pub-cache/credentials.json`
-4. Add them as repository secrets in GitHub
-
-### Publishing process
-
-Publishing is **only available through manual workflow dispatch** for safety:
-
-1. Navigate to GitHub Actions
-2. Run the "Release" workflow
-3. Set `publish_packages` to `true`
-4. Monitor the workflow for any publishing errors
+- **Release notes** generated from commit history
+- **Package versions** listed in the release description
+- **Changelog** automatically generated from git commits
+- **Pre-release detection** for versions with suffixes (e.g., `-beta`, `-alpha`)
+- **Auto-generated release notes** from GitHub
 
 ## Changelog Management
 
@@ -187,20 +167,19 @@ This project follows [Semantic Versioning](https://semver.org/):
    - Ensure version follows semantic versioning format
    - Check that all package versions are synchronized
 
-2. **Publishing fails**
-
-   - Verify pub.dev credentials are set correctly
-   - Check that package names are available on pub.dev
-   - Ensure package documentation and metadata are complete
-
-3. **Tests fail during release**
+2. **Tests fail during release**
 
    - Run `melos run test` locally first
    - Fix any failing tests before creating the release tag
 
-4. **Changelog generation issues**
+3. **Changelog generation issues**
+
    - Ensure commit messages follow conventional commit format
    - Check that there are commits since the last tag
+
+4. **Release creation fails**
+   - Verify GitHub token permissions
+   - Check that the tag doesn't already exist
 
 ### Getting Help
 
@@ -213,6 +192,6 @@ This project follows [Semantic Versioning](https://semver.org/):
 1. **Always test locally** before releasing
 2. **Use descriptive commit messages** for better changelog generation
 3. **Review generated changelogs** before final release
-4. **Test published packages** in a separate project
-5. **Keep releases small and frequent** rather than large infrequent releases
-6. **Document breaking changes** clearly in commit messages and changelogs
+4. **Keep releases small and frequent** rather than large infrequent releases
+5. **Document breaking changes** clearly in commit messages and changelogs
+6. **Test the release process** on feature branches when making workflow changes
