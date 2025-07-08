@@ -1,0 +1,12 @@
+name: modular_flutter_workspace
+
+workspace:
+  - packages/modular_core
+  - packages/modular_flutter
+  - packages/viewmodel
+
+environment:
+  sdk: ">=3.8.1 <4.0.0"
+
+dev_dependencies:
+  melos: ^7.0.0-dev.9

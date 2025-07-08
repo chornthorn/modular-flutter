@@ -1,0 +1,14 @@
+targets:
+  $default:
+    builders:
+      freezed:
+        generate_for:
+          - lib/**
+          - example/**
+        options:
+          # Generate copyWith methods
+          copy_with: true
+          # Generate equality methods
+          equal: true
+          # Generate toString methods
+          to_string: true
