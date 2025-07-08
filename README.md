@@ -7,9 +7,9 @@ A comprehensive Flutter starter project implementing clean modular architecture 
 ### **Modular Architecture**
 
 - Clean separation of concerns with feature modules
-- Dependency injection using [GetIt](https://pub.dev/packages/get_it)
+- Dependency injection using service locator pattern
 - Modular routing with [GoRouter](https://pub.dev/packages/go_router)
-- Workspace management with [Melos](https://pub.dev/packages/melos)
+- Git-based package management
 
 ### **State Management**
 
@@ -33,13 +33,19 @@ A comprehensive Flutter starter project implementing clean modular architecture 
 ## Project Structure
 
 ```
-modular_flutter/
-├── packages/
-│   ├── modular_core/          # Core modular architecture
-│   ├── modular_flutter/       # Flutter-specific implementations
-│   └── viewmodel/             # State management patterns
-├── example/                   # Example Flutter application
-│   └── lib/modules/post/      # Sample feature module
+my_modular_app/
+├── lib/
+│   ├── modules/
+│   │   └── post/               # Sample feature module
+│   │       ├── models/
+│   │       ├── pages/
+│   │       ├── repositories/
+│   │       ├── services/
+│   │       ├── viewmodels/
+│   │       ├── post_module.dart
+│   │       └── post_router.dart
+│   └── main.dart
+├── pubspec.yaml
 └── ...
 ```
 
@@ -52,26 +58,48 @@ modular_flutter/
 
 ### Installation
 
-1. **Clone the repository**
+1. **Create a new Flutter project**
 
    ```bash
-   git clone https://github.com/your-username/modular-flutter.git modular_flutter
-   cd modular_flutter
+   flutter create my_modular_app
+   cd my_modular_app
    ```
 
-2. **Install dependencies**
+2. **Add dependencies to pubspec.yaml**
 
-   ```bash
-   # Install melos globally
-   dart pub global activate melos
+   ```yaml
+   dependencies:
+     flutter:
+       sdk: flutter
 
-   # Bootstrap the workspace
-   melos bootstrap
+     # Modular Flutter packages
+     modular_flutter:
+       git:
+         url: https://github.com/chornthorn/modular-flutter.git
+         path: packages/modular_flutter
+         ref: main
+     viewmodel:
+       git:
+         url: https://github.com/chornthorn/modular-flutter.git
+         path: packages/viewmodel
+         ref: main
+
+     # Additional dependencies
+     http: ^1.1.0
+
+   dev_dependencies:
+     flutter_test:
+       sdk: flutter
+
+     # Code generation
+     build_runner: ^2.4.7
+     freezed: ^3.1.0
+     json_serializable: ^6.7.1
    ```
 
-3. **Run the example app**
+3. **Install dependencies and run**
    ```bash
-   cd example
+   flutter pub get
    flutter run
    ```
 
@@ -79,7 +107,7 @@ modular_flutter/
 
 ### Core Components
 
-#### 1. **Modular Core** (`packages/modular_core/`)
+#### 1. **Modular Core**
 
 The foundation of the modular architecture providing:
 
@@ -89,7 +117,7 @@ The foundation of the modular architecture providing:
 - **Module Router**: Routing abstraction for modules
 - **Service Locator**: Dependency injection container
 
-#### 2. **Modular Flutter** (`packages/modular_flutter/`)
+#### 2. **Modular Flutter**
 
 Flutter-specific implementations:
 
@@ -97,7 +125,7 @@ Flutter-specific implementations:
 - **Module Management**: Registration and initialization
 - **Flutter Router Integration**: Seamless GoRouter integration
 
-#### 3. **ViewModel** (`packages/viewmodel/`)
+#### 3. **ViewModel**
 
 State management solution:
 
@@ -119,15 +147,15 @@ class AuthModule extends Module<AuthRouter> {
   String get moduleName => 'auth';
 
   @override
-  void registerDependencies(GetIt locator, AppConfig appConfig) {
+  void registerDependencies(ServiceLocator locator) {
     // Register services
     locator.registerLazySingleton<AuthService>(
-      () => AuthService(apiBaseUrl: appConfig.apiBaseUrl),
+      () => AuthService(locator<http.Client>()),
     );
 
     // Register repositories
     locator.registerLazySingleton<AuthRepository>(
-      () => AuthRepositoryImpl(locator.get<AuthService>()),
+      () => AuthRepositoryImpl(locator<AuthService>()),
     );
   }
 }
@@ -165,16 +193,20 @@ class LoginViewModel extends ViewModel<LoginState> {
   LoginViewModel(this._authRepository) : super(const LoginState());
 
   Future<void> login(String email, String password) async {
-    try {
-      state = state.loading;
-      final result = await _authRepository.login(email, password);
+    updateState(state.copyWith(status: UiStatus.loading));
 
-      result.match(
-        onOk: (user) => state = state.success(user),
-        onErr: (error) => state = state.error(error.toString()),
-      );
+    try {
+      final user = await _authRepository.login(email, password);
+      updateState(state.copyWith(
+        status: UiStatus.success,
+        user: user,
+        errorMessage: null,
+      ));
     } catch (e) {
-      state = state.error(e.toString());
+      updateState(state.copyWith(
+        status: UiStatus.error,
+        errorMessage: e.toString(),
+      ));
     }
   }
 }
@@ -184,7 +216,7 @@ class LoginViewModel extends ViewModel<LoginState> {
 
 ```dart
 @freezed
-class LoginState with _$LoginState implements UiState {
+class LoginState with _$LoginState implements UiState<LoginState> {
   const factory LoginState({
     @Default(UiStatus.initial) UiStatus status,
     User? user,
@@ -193,16 +225,13 @@ class LoginState with _$LoginState implements UiState {
 
   const LoginState._();
 
-  LoginState get loading => copyWith(status: UiStatus.loading);
-  LoginState success(User user) => copyWith(
-    status: UiStatus.success,
-    user: user,
-    errorMessage: null,
-  );
-  LoginState error(String message) => copyWith(
-    status: UiStatus.error,
-    errorMessage: message,
-  );
+  @override
+  bool get loading => status == UiStatus.loading;
+
+  bool get isInitial => status == UiStatus.initial;
+  bool get isLoading => status == UiStatus.loading;
+  bool get isSuccess => status == UiStatus.success;
+  bool get isError => status == UiStatus.error;
 }
 ```
 
@@ -213,13 +242,15 @@ The project includes a complete **Post Module** demonstrating:
 - **CRUD Operations**: List, view, create, update, delete posts
 - **Repository Pattern**: Clean data layer abstraction
 - **State Management**: ViewModel with Riverpod integration
-- **Error Handling**: Result types for robust error management
+- **Error Handling**: Comprehensive error management
 - **Navigation**: Deep linking with GoRouter
 
 ### Running the Example
 
 ```bash
-cd example
+git clone https://github.com/chornthorn/modular-flutter.git
+cd modular-flutter/example
+flutter pub get
 flutter run
 ```
 
@@ -230,23 +261,17 @@ Visit the Posts module to see the architecture in action.
 ### Run All Tests
 
 ```bash
-melos test
+flutter test
 ```
 
-### Run Tests for Specific Package
+### Run Tests for Specific Areas
 
 ```bash
-# Core package tests
-cd packages/modular_core
-dart test
+# Widget tests
+flutter test test/widget_test.dart
 
-# ViewModel tests
-cd packages/viewmodel
-dart test
-
-# Example app tests
-cd example
-flutter test
+# Integration tests
+flutter test integration_test/
 ```
 
 ## Configuration
@@ -277,50 +302,57 @@ class MyAppConfig extends AppConfig {
 }
 ```
 
-## Package Documentation
+## Module Structure
 
-### Modular Core
+Each feature module follows a consistent structure:
 
-- [API Documentation](packages/modular_core/README.md)
-- Dependency injection patterns
-- Module lifecycle management
-- Configuration management
-
-### Modular Flutter
-
-- [API Documentation](packages/modular_flutter/README.md)
-- Flutter-specific implementations
-- Widget integration patterns
-
-### ViewModel
-
-- [API Documentation](packages/viewmodel/README.md)
-- State management patterns
-- Riverpod integration
-- Testing strategies
+```
+auth_module/
+├── models/
+│   └── user_model.dart
+├── pages/
+│   ├── login_screen.dart
+│   └── register_screen.dart
+├── repositories/
+│   ├── auth_repository.dart
+│   └── auth_repository_impl.dart
+├── services/
+│   └── auth_service.dart
+├── viewmodels/
+│   ├── login/
+│   │   ├── login_state.dart
+│   │   ├── login_state.freezed.dart
+│   │   └── login_viewmodel.dart
+│   └── register/
+│       ├── register_state.dart
+│       ├── register_state.freezed.dart
+│       └── register_viewmodel.dart
+├── auth_module.dart
+└── auth_router.dart
+```
 
 ## Development Tools
 
 ### Useful Commands
 
 ```bash
-# Bootstrap workspace
-melos bootstrap
+# Install dependencies
+flutter pub get
 
-# Run all tests
-melos test
+# Run tests
+flutter test
 
 # Format code
-melos format
+dart format .
 
 # Analyze code
-melos analyze
+flutter analyze
 
 # Generate code (freezed, json_serializable)
-melos generate
+dart run build_runner build
 
-# Clean all packages
-melos clean
+# Clean build
+flutter clean
 ```
 
 ### Code Generation
@@ -331,6 +363,9 @@ dart run build_runner build
 
 # Watch for changes
 dart run build_runner watch
+
+# Clean generated files
+dart run build_runner clean
 ```
 
 ## Multi-Platform Support
@@ -342,13 +377,21 @@ This starter supports all Flutter platforms:
 - **Web** (Modern browsers)
 - **Desktop** (Windows, macOS, Linux)
 
-## Dependency Management
+## Best Practices
 
-Dependabot is configured to automatically update dependencies:
+### Module Development
 
-- **Weekly updates** for all packages
-- **Security updates** prioritized
-- **Automated testing** before merging
+1. **Single Responsibility**: Each module handles one feature area
+2. **Dependency Injection**: Use service locator for loose coupling
+3. **State Management**: Implement ViewModels for business logic
+4. **Testing**: Write comprehensive tests for each layer
+
+### Code Organization
+
+1. **Consistent Structure**: Follow the established module structure
+2. **Separation of Concerns**: Keep UI, business logic, and data layers separate
+3. **Type Safety**: Use Freezed for immutable state classes
+4. **Error Handling**: Implement proper error handling at all levels
 
 ## Contributing
 
@@ -359,7 +402,7 @@ We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) f
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes with tests
-4. Run `melos test` to verify
+4. Run `flutter test` to verify
 5. Submit a pull request
 
 ## License
@@ -370,15 +413,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Flutter Team](https://flutter.dev) for the amazing framework
 - [Riverpod](https://riverpod.dev) for state management inspiration
-- [GetIt](https://pub.dev/packages/get_it) for dependency injection
 - [GoRouter](https://pub.dev/packages/go_router) for navigation
-- [Melos](https://pub.dev/packages/melos) for workspace management
+- [Freezed](https://pub.dev/packages/freezed) for immutable classes
 
 ## Support
 
-- **Documentation**: Check package README files
-- **Issues**: [GitHub Issues](https://github.com/your-username/flutter_starter/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-username/flutter_starter/discussions)
+- **Documentation**: Comprehensive guides available
+- **Issues**: [GitHub Issues](https://github.com/chornthorn/modular-flutter/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/chornthorn/modular-flutter/discussions)
 
 ---
 
